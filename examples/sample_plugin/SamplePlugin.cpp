@@ -12,7 +12,14 @@ SamplePlugin::SamplePlugin(QObject* parent)
 
 SamplePlugin::~SamplePlugin()
 {
-    shutdown();
+    // 注意：析构函数中不要调用shutdown()，因为：
+    // 1. 在扫描插件时，loader.unload()会触发析构，此时插件还未初始化
+    // 2. shutdown()应该在PluginManager的unloadPlugin中调用
+    // 如果确实需要清理，检查是否已初始化
+    if (m_context.pluginPath.isEmpty() == false) {
+        // 只有在已初始化的情况下才清理
+        // 但这里也不应该调用shutdown()，因为可能已经被调用过了
+    }
 }
 
 Eagle::Core::PluginMetadata SamplePlugin::metadata() const

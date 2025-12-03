@@ -99,14 +99,14 @@ bool PluginManager::scanPlugins()
             IPlugin* plugin = qobject_cast<IPlugin*>(pluginObj);
             if (!plugin) {
                 Logger::warning("PluginManager", QString("插件未实现IPlugin接口: %1").arg(filePath));
-                loader.unload();
+                // 不调用unload，让loader析构时自动处理
                 continue;
             }
             
             PluginMetadata meta = plugin->metadata();
             if (!meta.isValid()) {
                 Logger::warning("PluginManager", QString("插件元数据无效: %1").arg(filePath));
-                loader.unload();
+                // 不调用unload，让loader析构时自动处理
                 continue;
             }
             
@@ -115,20 +115,17 @@ bool PluginManager::scanPlugins()
                 QString sigPath = PluginSignatureVerifier::findSignatureFile(filePath);
                 if (sigPath.isEmpty()) {
                     Logger::warning("PluginManager", QString("插件缺少签名文件: %1").arg(filePath));
-                    loader.unload();
                     continue;
                 }
                 
                 PluginSignature signature = PluginSignatureVerifier::loadFromFile(sigPath);
                 if (!signature.isValid()) {
                     Logger::warning("PluginManager", QString("插件签名无效: %1").arg(filePath));
-                    loader.unload();
                     continue;
                 }
                 
                 if (!PluginSignatureVerifier::verify(filePath, signature)) {
                     Logger::error("PluginManager", QString("插件签名验证失败: %1").arg(filePath));
-                    loader.unload();
                     continue;
                 }
                 
@@ -139,7 +136,7 @@ bool PluginManager::scanPlugins()
             Logger::info("PluginManager", QString("发现插件: %1 (%2)")
                 .arg(meta.name, meta.version));
             
-            loader.unload();
+            // 不调用unload，让loader析构时自动处理，避免触发插件析构函数
         }
     }
     
@@ -296,9 +293,29 @@ bool PluginManager::loadPlugin(const QString& pluginId)
     });
     
     // 在隔离环境中执行初始化
-    bool initSuccess = PluginIsolation::executeIsolated(pluginId, [plugin, context]() -> bool {
-        return plugin->initialize(context);
-    });
+    // 注意：不要捕获plugin指针，避免lambda生命周期问题
+    bool initSuccess = false;
+    try {
+        initSuccess = plugin->initialize(context);
+    } catch (const std::exception& e) {
+        QString error = QString("插件初始化异常: %1 - %2").arg(pluginId, e.what());
+        Logger::error("PluginManager", error);
+        PluginIsolation::registerExceptionHandler(pluginId, [this, pluginId](const QString& err) {
+            emit pluginError(pluginId, err);
+        });
+        PluginIsolation::executeIsolated(pluginId, []() -> bool { return false; });
+        loader->unload();
+        delete loader;
+        emit pluginError(pluginId, error);
+        return false;
+    } catch (...) {
+        QString error = QString("插件初始化未知异常: %1").arg(pluginId);
+        Logger::error("PluginManager", error);
+        loader->unload();
+        delete loader;
+        emit pluginError(pluginId, error);
+        return false;
+    }
     
     if (!initSuccess) {
         QString error = QString("插件初始化失败: %1").arg(pluginId);
@@ -316,7 +333,12 @@ bool PluginManager::loadPlugin(const QString& pluginId)
     locker.unlock();
     
     Logger::info("PluginManager", QString("插件加载成功: %1").arg(pluginId));
-    emit pluginLoaded(pluginId);
+    
+    // 使用QueuedConnection避免在锁内发送信号导致问题
+    QMetaObject::invokeMethod(this, [this, pluginId]() {
+        emit pluginLoaded(pluginId);
+    }, Qt::QueuedConnection);
+    
     return true;
 }
 
@@ -343,22 +365,33 @@ bool PluginManager::unloadPlugin(const QString& pluginId)
     
     // 在隔离环境中执行关闭操作
     if (plugin) {
-        PluginIsolation::executeIsolated(pluginId, [plugin]() -> bool {
+        try {
             plugin->shutdown();
-            return true;
-        });
+        } catch (const std::exception& e) {
+            Logger::error("PluginManager", QString("插件关闭异常: %1 - %2").arg(pluginId, e.what()));
+        } catch (...) {
+            Logger::error("PluginManager", QString("插件关闭未知异常: %1").arg(pluginId));
+        }
     }
     
     if (loader) {
+        // 先调用shutdown，再unload，避免析构函数中再次调用shutdown
         if (!loader->unload()) {
             Logger::warning("PluginManager", QString("卸载插件失败: %1, 错误: %2")
                 .arg(pluginId, loader->errorString()));
         }
+        // 注意：不要delete loader，unload后Qt会自动管理
+        // 但因为我们用new创建，需要delete
         delete loader;
     }
     
     Logger::info("PluginManager", QString("插件卸载成功: %1").arg(pluginId));
-    emit pluginUnloaded(pluginId);
+    
+    // 使用QueuedConnection避免在锁内发送信号
+    QMetaObject::invokeMethod(this, [this, pluginId]() {
+        emit pluginUnloaded(pluginId);
+    }, Qt::QueuedConnection);
+    
     return true;
 }
 
