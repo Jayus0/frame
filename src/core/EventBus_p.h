@@ -23,7 +23,7 @@ struct EventSubscription {
 class EventBusPrivate {
 public:
     QMap<QString, QList<EventSubscription>> subscriptions;
-    QMutex mutex;
+    mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
 };
 
 } // namespace Core

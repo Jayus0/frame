@@ -14,7 +14,7 @@ public:
     QVariantMap globalConfig;
     QVariantMap userConfig;
     QMap<QString, QVariantMap> pluginConfigs;
-    QMutex mutex;
+    mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
     QMap<QString, QList<QPair<QObject*, QByteArray>>> watchers;
 };
 

@@ -14,7 +14,7 @@ class ServiceRegistryPrivate {
 public:
     QMap<QString, QList<ServiceDescriptor>> services; // serviceName -> versions
     QMap<QString, QObject*> providers; // serviceName+version -> provider
-    QMutex mutex;
+    mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
 };
 
 } // namespace Core

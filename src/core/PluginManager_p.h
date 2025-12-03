@@ -18,7 +18,7 @@ public:
     QMap<QString, IPlugin*> plugins;
     QMap<QString, PluginMetadata> metadata;
     bool signatureRequired = false;
-    QMutex mutex;
+    mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
 };
 
 } // namespace Core
