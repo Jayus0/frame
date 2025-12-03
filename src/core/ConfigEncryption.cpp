@@ -85,7 +85,9 @@ QVariantMap ConfigEncryption::encryptConfig(const QVariantMap& config,
         // 检查是否需要加密
         bool shouldEncrypt = false;
         for (const QString& pattern : sensitiveKeys) {
-            if (keyName.contains(pattern.replace("*", ""), Qt::CaseInsensitive)) {
+            QString cleanPattern = pattern;
+            cleanPattern.replace("*", "");
+            if (keyName.contains(cleanPattern, Qt::CaseInsensitive)) {
                 shouldEncrypt = true;
                 break;
             }
