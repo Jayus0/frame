@@ -1,0 +1,2 @@
+add_subdirectory(sample_plugin)
+add_subdirectory(main_app)
