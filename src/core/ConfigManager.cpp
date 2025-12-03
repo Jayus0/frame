@@ -1,4 +1,5 @@
 #include "eagle/core/ConfigManager.h"
+#include "ConfigManager_p.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -12,15 +13,6 @@
 
 namespace Eagle {
 namespace Core {
-
-class ConfigManagerPrivate {
-public:
-    QVariantMap globalConfig;
-    QVariantMap userConfig;
-    QMap<QString, QVariantMap> pluginConfigs;
-    QMutex mutex;
-    QMap<QString, QList<QPair<QObject*, QByteArray>>> watchers;
-};
 
 ConfigManager::ConfigManager(QObject* parent)
     : QObject(parent)

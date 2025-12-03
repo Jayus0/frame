@@ -1,4 +1,5 @@
 #include "eagle/core/PluginManager.h"
+#include "PluginManager_p.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -12,16 +13,6 @@
 
 namespace Eagle {
 namespace Core {
-
-class PluginManagerPrivate {
-public:
-    QStringList pluginPaths;
-    QMap<QString, QPluginLoader*> loaders;
-    QMap<QString, IPlugin*> plugins;
-    QMap<QString, PluginMetadata> metadata;
-    bool signatureRequired = false;
-    QMutex mutex;
-};
 
 PluginManager::PluginManager(QObject* parent)
     : QObject(parent)

@@ -1,5 +1,6 @@
 #include "eagle/core/ServiceRegistry.h"
 #include "eagle/core/ServiceDescriptor.h"
+#include "ServiceRegistry_p.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QMetaObject>
 #include <QtCore/QMetaMethod>
@@ -9,13 +10,6 @@
 
 namespace Eagle {
 namespace Core {
-
-class ServiceRegistryPrivate {
-public:
-    QMap<QString, QList<ServiceDescriptor>> services; // serviceName -> versions
-    QMap<QString, QObject*> providers; // serviceName+version -> provider
-    QMutex mutex;
-};
 
 ServiceRegistry::ServiceRegistry(QObject* parent)
     : QObject(parent)

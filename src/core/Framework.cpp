@@ -1,4 +1,5 @@
 #include "eagle/core/Framework.h"
+#include "Framework_p.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDir>
@@ -7,24 +8,6 @@
 
 namespace Eagle {
 namespace Core {
-
-class Framework::Private {
-public:
-    PluginManager* pluginManager;
-    ServiceRegistry* serviceRegistry;
-    EventBus* eventBus;
-    ConfigManager* configManager;
-    bool initialized;
-    
-    Private() 
-        : pluginManager(nullptr)
-        , serviceRegistry(nullptr)
-        , eventBus(nullptr)
-        , configManager(nullptr)
-        , initialized(false)
-    {
-    }
-};
 
 Framework* Framework::s_instance = nullptr;
 

@@ -1,4 +1,5 @@
 #include "eagle/core/EventBus.h"
+#include "EventBus_p.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
@@ -8,21 +9,6 @@
 
 namespace Eagle {
 namespace Core {
-
-struct EventSubscription {
-    QObject* receiver;
-    QByteArray method;
-    std::function<void(const QVariant&)> callback;
-    bool isCallback;
-    
-    EventSubscription() : receiver(nullptr), isCallback(false) {}
-};
-
-class EventBusPrivate {
-public:
-    QMap<QString, QList<EventSubscription>> subscriptions;
-    QMutex mutex;
-};
 
 EventBus::EventBus(QObject* parent)
     : QObject(parent)
