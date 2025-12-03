@@ -5,6 +5,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QCoreApplication>
 
 namespace Eagle {
 namespace Core {
@@ -70,11 +71,18 @@ bool Framework::initialize(const QString& configPath)
         d->configManager->loadFromFile(actualConfigPath, ConfigManager::Global);
     } else {
         // 创建默认配置
+        // 获取可执行文件所在目录
+        QString appDir = QCoreApplication::applicationDirPath();
+        QStringList defaultPaths;
+        defaultPaths << appDir + "/plugins";  // 可执行文件同目录下的plugins
+        defaultPaths << appDir + "/../plugins";  // 上一级目录的plugins
+        defaultPaths << QDir::currentPath() + "/plugins";  // 当前工作目录的plugins
+        
         QVariantMap defaultConfig;
         defaultConfig["framework"] = QVariantMap({
             {"plugins", QVariantMap({
                 {"enabled", true},
-                {"scan_paths", QStringList({"./plugins", "../plugins"})}
+                {"scan_paths", defaultPaths}
             })},
             {"logging", QVariantMap({
                 {"level", "info"},

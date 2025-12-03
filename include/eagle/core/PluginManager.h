@@ -27,6 +27,7 @@ public:
     
     // 配置
     void setPluginPaths(const QStringList& paths);
+    QStringList pluginPaths() const;  // 获取当前配置的插件路径
     void setPluginSignatureRequired(bool required);
     
     // 插件发现

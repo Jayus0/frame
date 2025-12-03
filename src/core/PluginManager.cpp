@@ -44,6 +44,13 @@ void PluginManager::setPluginPaths(const QStringList& paths)
     d->pluginPaths = paths;
 }
 
+QStringList PluginManager::pluginPaths() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->pluginPaths;
+}
+
 void PluginManager::setPluginSignatureRequired(bool required)
 {
     auto* d = d_func();

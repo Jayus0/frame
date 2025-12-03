@@ -92,19 +92,35 @@ void MainWindow::updatePluginList()
     m_pluginList->clear();
     
     QStringList plugins = m_framework->pluginManager()->availablePlugins();
-    for (const QString& pluginId : plugins) {
-        Eagle::Core::PluginMetadata meta = m_framework->pluginManager()->getPluginMetadata(pluginId);
-        bool isLoaded = m_framework->pluginManager()->isPluginLoaded(pluginId);
+    
+    if (plugins.isEmpty()) {
+        // 如果没有插件，显示提示信息
+        QListWidgetItem* item = new QListWidgetItem("未找到插件", m_pluginList);
+        item->setForeground(Qt::gray);
+        item->setData(Qt::UserRole, QString());
         
-        QString displayText = QString("%1 (%2) - %3")
-            .arg(meta.name, meta.version, isLoaded ? "[已加载]" : "[未加载]");
-        
-        QListWidgetItem* item = new QListWidgetItem(displayText, m_pluginList);
-        item->setData(Qt::UserRole, pluginId);
-        item->setData(Qt::UserRole + 1, isLoaded);
-        
-        if (isLoaded) {
-            item->setForeground(Qt::green);
+        // 显示插件扫描路径信息
+        QStringList scanPaths = m_framework->pluginManager()->pluginPaths();
+        QString pathsInfo = scanPaths.isEmpty() ? "未配置插件路径" : 
+                           QString("扫描路径: %1").arg(scanPaths.join(", "));
+        m_statusLabel->setText(QString("未找到插件。%1").arg(pathsInfo));
+    } else {
+        for (const QString& pluginId : plugins) {
+            Eagle::Core::PluginMetadata meta = m_framework->pluginManager()->getPluginMetadata(pluginId);
+            bool isLoaded = m_framework->pluginManager()->isPluginLoaded(pluginId);
+            
+            QString displayText = QString("%1 (%2) - %3")
+                .arg(meta.name, meta.version, isLoaded ? "[已加载]" : "[未加载]");
+            
+            QListWidgetItem* item = new QListWidgetItem(displayText, m_pluginList);
+            item->setData(Qt::UserRole, pluginId);
+            item->setData(Qt::UserRole + 1, isLoaded);
+            
+            if (isLoaded) {
+                item->setForeground(Qt::green);
+            } else {
+                item->setForeground(Qt::black);
+            }
         }
     }
 }
