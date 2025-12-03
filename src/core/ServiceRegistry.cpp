@@ -3,6 +3,8 @@
 #include "ServiceRegistry_p.h"
 #include "eagle/core/CircuitBreaker.h"
 #include "eagle/core/Framework.h"
+#include "eagle/core/RBAC.h"
+#include "eagle/core/RateLimiter.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QMetaObject>
 #include <QtCore/QMetaMethod>

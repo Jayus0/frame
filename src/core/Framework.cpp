@@ -65,6 +65,15 @@ bool Framework::initialize(const QString& configPath)
     d->auditLogManager = new AuditLogManager(this);
     d->performanceMonitor = new PerformanceMonitor(this);
     d->alertSystem = new AlertSystem(d->performanceMonitor, this);
+    d->rateLimiter = new RateLimiter(this);
+    d->apiKeyManager = new ApiKeyManager(this);
+    d->sessionManager = new SessionManager(this);
+    
+    // 配置ServiceRegistry使用RBAC和限流器
+    if (d->serviceRegistry) {
+        d->serviceRegistry->setPermissionCheckEnabled(true);
+        d->serviceRegistry->setRateLimitEnabled(true);
+    }
     
     // PluginContext 会在加载插件时通过 PluginManager 传递
     
@@ -162,6 +171,15 @@ void Framework::shutdown()
     delete d->auditLogManager;
     d->auditLogManager = nullptr;
     
+    delete d->rateLimiter;
+    d->rateLimiter = nullptr;
+    
+    delete d->sessionManager;
+    d->sessionManager = nullptr;
+    
+    delete d->apiKeyManager;
+    d->apiKeyManager = nullptr;
+    
     delete d->rbacManager;
     d->rbacManager = nullptr;
     
@@ -223,6 +241,21 @@ PerformanceMonitor* Framework::performanceMonitor() const
 AlertSystem* Framework::alertSystem() const
 {
     return d->alertSystem;
+}
+
+RateLimiter* Framework::rateLimiter() const
+{
+    return d->rateLimiter;
+}
+
+ApiKeyManager* Framework::apiKeyManager() const
+{
+    return d->apiKeyManager;
+}
+
+SessionManager* Framework::sessionManager() const
+{
+    return d->sessionManager;
 }
 
 QString Framework::version() const

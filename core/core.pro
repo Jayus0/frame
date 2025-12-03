@@ -21,7 +21,10 @@ SOURCES += \
     ../src/core/RBAC.cpp \
     ../src/core/AuditLog.cpp \
     ../src/core/PerformanceMonitor.cpp \
-    ../src/core/AlertSystem.cpp
+    ../src/core/AlertSystem.cpp \
+    ../src/core/RateLimiter.cpp \
+    ../src/core/ApiKeyManager.cpp \
+    ../src/core/SessionManager.cpp
 
 # 头文件
 HEADERS += \
@@ -49,7 +52,13 @@ HEADERS += \
     ../include/eagle/core/PerformanceMonitor.h \
     ../src/core/PerformanceMonitor_p.h \
     ../include/eagle/core/AlertSystem.h \
-    ../src/core/AlertSystem_p.h
+    ../src/core/AlertSystem_p.h \
+    ../include/eagle/core/RateLimiter.h \
+    ../src/core/RateLimiter_p.h \
+    ../include/eagle/core/ApiKeyManager.h \
+    ../src/core/ApiKeyManager_p.h \
+    ../include/eagle/core/SessionManager.h \
+    ../src/core/SessionManager_p.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

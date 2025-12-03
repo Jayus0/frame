@@ -10,6 +10,9 @@
 #include "AuditLog.h"
 #include "PerformanceMonitor.h"
 #include "AlertSystem.h"
+#include "RateLimiter.h"
+#include "ApiKeyManager.h"
+#include "SessionManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -39,6 +42,9 @@ public:
     AuditLogManager* auditLogManager() const;
     PerformanceMonitor* performanceMonitor() const;
     AlertSystem* alertSystem() const;
+    RateLimiter* rateLimiter() const;
+    ApiKeyManager* apiKeyManager() const;
+    SessionManager* sessionManager() const;
     
     // 框架信息
     QString version() const;

@@ -9,6 +9,9 @@
 #include "eagle/core/AuditLog.h"
 #include "eagle/core/PerformanceMonitor.h"
 #include "eagle/core/AlertSystem.h"
+#include "eagle/core/RateLimiter.h"
+#include "eagle/core/ApiKeyManager.h"
+#include "eagle/core/SessionManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -23,6 +26,9 @@ public:
     AuditLogManager* auditLogManager;
     PerformanceMonitor* performanceMonitor;
     AlertSystem* alertSystem;
+    RateLimiter* rateLimiter;
+    ApiKeyManager* apiKeyManager;
+    SessionManager* sessionManager;
     bool initialized;
     
     Private() 
@@ -34,6 +40,9 @@ public:
         , auditLogManager(nullptr)
         , performanceMonitor(nullptr)
         , alertSystem(nullptr)
+        , rateLimiter(nullptr)
+        , apiKeyManager(nullptr)
+        , sessionManager(nullptr)
         , initialized(false)
     {
     }

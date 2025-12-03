@@ -13,6 +13,9 @@ set(SOURCES
     AuditLog.cpp
     PerformanceMonitor.cpp
     AlertSystem.cpp
+    RateLimiter.cpp
+    ApiKeyManager.cpp
+    SessionManager.cpp
 )
 
 set(HEADERS
@@ -32,6 +35,9 @@ set(HEADERS
     ${CMAKE_SOURCE_DIR}/include/eagle/core/AuditLog.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/PerformanceMonitor.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/AlertSystem.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/RateLimiter.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/ApiKeyManager.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/SessionManager.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})
