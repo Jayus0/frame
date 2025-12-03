@@ -6,6 +6,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QElapsedTimer>
 
 namespace Eagle {
 namespace Core {
@@ -58,6 +59,12 @@ bool Framework::initialize(const QString& configPath)
     d->eventBus = new EventBus(this);
     d->serviceRegistry = new ServiceRegistry(this);
     d->pluginManager = new PluginManager(this);
+    
+    // 创建企业级组件
+    d->rbacManager = new RBACManager(this);
+    d->auditLogManager = new AuditLogManager(this);
+    d->performanceMonitor = new PerformanceMonitor(this);
+    d->alertSystem = new AlertSystem(d->performanceMonitor, this);
     
     // PluginContext 会在加载插件时通过 PluginManager 传递
     
@@ -146,6 +153,18 @@ void Framework::shutdown()
     }
     
     // 清理组件
+    delete d->alertSystem;
+    d->alertSystem = nullptr;
+    
+    delete d->performanceMonitor;
+    d->performanceMonitor = nullptr;
+    
+    delete d->auditLogManager;
+    d->auditLogManager = nullptr;
+    
+    delete d->rbacManager;
+    d->rbacManager = nullptr;
+    
     delete d->pluginManager;
     d->pluginManager = nullptr;
     
@@ -184,6 +203,26 @@ EventBus* Framework::eventBus() const
 ConfigManager* Framework::configManager() const
 {
     return d->configManager;
+}
+
+RBACManager* Framework::rbacManager() const
+{
+    return d->rbacManager;
+}
+
+AuditLogManager* Framework::auditLogManager() const
+{
+    return d->auditLogManager;
+}
+
+PerformanceMonitor* Framework::performanceMonitor() const
+{
+    return d->performanceMonitor;
+}
+
+AlertSystem* Framework::alertSystem() const
+{
+    return d->alertSystem;
 }
 
 QString Framework::version() const

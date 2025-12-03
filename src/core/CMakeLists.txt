@@ -9,6 +9,10 @@ set(SOURCES
     CircuitBreaker.cpp
     ConfigEncryption.cpp
     PluginIsolation.cpp
+    RBAC.cpp
+    AuditLog.cpp
+    PerformanceMonitor.cpp
+    AlertSystem.cpp
 )
 
 set(HEADERS
@@ -24,6 +28,10 @@ set(HEADERS
     ${CMAKE_SOURCE_DIR}/include/eagle/core/CircuitBreaker.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/ConfigEncryption.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/PluginIsolation.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/RBAC.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/AuditLog.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/PerformanceMonitor.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/AlertSystem.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})

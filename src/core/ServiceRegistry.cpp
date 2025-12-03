@@ -2,6 +2,7 @@
 #include "eagle/core/ServiceDescriptor.h"
 #include "ServiceRegistry_p.h"
 #include "eagle/core/CircuitBreaker.h"
+#include "eagle/core/Framework.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QMetaObject>
 #include <QtCore/QMetaMethod>
@@ -298,6 +299,13 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
         if (breaker) {
             breaker->recordSuccess();
         }
+    }
+    
+    // 记录服务调用时间
+    qint64 callTime = timer.elapsed();
+    Framework* framework = Framework::instance();
+    if (framework && framework->performanceMonitor()) {
+        framework->performanceMonitor()->recordServiceCallTime(serviceName, method, callTime);
     }
     
     return returnValue;

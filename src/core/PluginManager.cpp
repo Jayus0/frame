@@ -2,6 +2,7 @@
 #include "PluginManager_p.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/PluginIsolation.h"
+#include "eagle/core/Framework.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -11,6 +12,7 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QDebug>
 
 namespace Eagle {
@@ -292,8 +294,10 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         emit pluginError(pluginId, error);
     });
     
-    // 在隔离环境中执行初始化
-    // 注意：不要捕获plugin指针，避免lambda生命周期问题
+    // 在隔离环境中执行初始化，并记录性能
+    QElapsedTimer timer;
+    timer.start();
+    
     bool initSuccess = false;
     try {
         initSuccess = plugin->initialize(context);
@@ -324,6 +328,13 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         delete loader;
         emit pluginError(pluginId, error);
         return false;
+    }
+    
+    // 记录插件加载时间
+    qint64 loadTime = timer.elapsed();
+    Framework* framework = Framework::instance();
+    if (framework && framework->performanceMonitor()) {
+        framework->performanceMonitor()->recordPluginLoadTime(pluginId, loadTime);
     }
     
     d->loaders[pluginId] = loader;

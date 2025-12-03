@@ -6,6 +6,10 @@
 #include "ServiceRegistry.h"
 #include "EventBus.h"
 #include "ConfigManager.h"
+#include "RBAC.h"
+#include "AuditLog.h"
+#include "PerformanceMonitor.h"
+#include "AlertSystem.h"
 
 namespace Eagle {
 namespace Core {
@@ -31,6 +35,10 @@ public:
     ServiceRegistry* serviceRegistry() const;
     EventBus* eventBus() const;
     ConfigManager* configManager() const;
+    RBACManager* rbacManager() const;
+    AuditLogManager* auditLogManager() const;
+    PerformanceMonitor* performanceMonitor() const;
+    AlertSystem* alertSystem() const;
     
     // 框架信息
     QString version() const;

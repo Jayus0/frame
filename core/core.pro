@@ -17,7 +17,11 @@ SOURCES += \
     ../src/core/PluginSignature.cpp \
     ../src/core/CircuitBreaker.cpp \
     ../src/core/ConfigEncryption.cpp \
-    ../src/core/PluginIsolation.cpp
+    ../src/core/PluginIsolation.cpp \
+    ../src/core/RBAC.cpp \
+    ../src/core/AuditLog.cpp \
+    ../src/core/PerformanceMonitor.cpp \
+    ../src/core/AlertSystem.cpp
 
 # 头文件
 HEADERS += \
@@ -37,7 +41,15 @@ HEADERS += \
     ../include/eagle/core/PluginSignature.h \
     ../include/eagle/core/CircuitBreaker.h \
     ../include/eagle/core/ConfigEncryption.h \
-    ../include/eagle/core/PluginIsolation.h
+    ../include/eagle/core/PluginIsolation.h \
+    ../include/eagle/core/RBAC.h \
+    ../src/core/RBAC_p.h \
+    ../include/eagle/core/AuditLog.h \
+    ../src/core/AuditLog_p.h \
+    ../include/eagle/core/PerformanceMonitor.h \
+    ../src/core/PerformanceMonitor_p.h \
+    ../include/eagle/core/AlertSystem.h \
+    ../src/core/AlertSystem_p.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include
