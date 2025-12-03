@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "eagle/core/Logger.h"
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QListWidgetItem>
 #include <QtWidgets/QDialog>
