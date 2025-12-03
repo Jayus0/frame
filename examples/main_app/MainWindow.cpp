@@ -3,6 +3,7 @@
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QListWidgetItem>
 #include <QtWidgets/QDialog>
+#include <QtCore/QTimer>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -61,25 +62,25 @@ void MainWindow::setupUI()
     connect(m_refreshButton, &QPushButton::clicked, this, &MainWindow::onRefreshPlugins);
     connect(m_pluginList, &QListWidget::itemDoubleClicked, this, &MainWindow::onPluginSelected);
     
-    // 连接框架信号
+    // 连接框架信号（使用QueuedConnection避免死锁）
     if (m_framework && m_framework->pluginManager()) {
         connect(m_framework->pluginManager(), &Eagle::Core::PluginManager::pluginLoaded,
                 this, [this](const QString& pluginId) {
             m_statusLabel->setText(QString("插件已加载: %1").arg(pluginId));
-            updatePluginList();
-        });
+            QTimer::singleShot(0, this, [this]() { updatePluginList(); });  // 延迟更新，避免在信号处理中调用
+        }, Qt::QueuedConnection);
         
         connect(m_framework->pluginManager(), &Eagle::Core::PluginManager::pluginUnloaded,
                 this, [this](const QString& pluginId) {
             m_statusLabel->setText(QString("插件已卸载: %1").arg(pluginId));
-            updatePluginList();
-        });
+            QTimer::singleShot(0, this, [this]() { updatePluginList(); });
+        }, Qt::QueuedConnection);
         
         connect(m_framework->pluginManager(), &Eagle::Core::PluginManager::pluginError,
                 this, [this](const QString& pluginId, const QString& error) {
             m_statusLabel->setText(QString("错误: %1 - %2").arg(pluginId, error));
             QMessageBox::warning(this, "插件错误", QString("插件 %1 发生错误:\n%2").arg(pluginId, error));
-        });
+        }, Qt::QueuedConnection);
     }
 }
 
@@ -138,12 +139,24 @@ void MainWindow::onLoadPlugin()
         return;
     }
     
+    // 禁用按钮，防止重复点击
+    m_loadButton->setEnabled(false);
+    m_statusLabel->setText(QString("正在加载插件: %1...").arg(pluginId));
+    QApplication::processEvents();  // 更新界面
+    
     if (m_framework && m_framework->pluginManager()) {
-        if (m_framework->pluginManager()->loadPlugin(pluginId)) {
-            m_statusLabel->setText(QString("正在加载插件: %1").arg(pluginId));
-        } else {
-            QMessageBox::warning(this, "错误", QString("加载插件失败: %1").arg(pluginId));
-        }
+        // 在后台线程中加载（实际上还是在主线程，但这样可以避免界面卡死）
+        QTimer::singleShot(0, this, [this, pluginId]() {
+            bool success = m_framework->pluginManager()->loadPlugin(pluginId);
+            m_loadButton->setEnabled(true);
+            if (!success) {
+                m_statusLabel->setText(QString("加载插件失败: %1").arg(pluginId));
+                QMessageBox::warning(this, "错误", QString("加载插件失败: %1\n请查看日志获取详细信息").arg(pluginId));
+            }
+            // updatePluginList 会通过信号槽自动调用
+        });
+    } else {
+        m_loadButton->setEnabled(true);
     }
 }
 

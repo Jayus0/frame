@@ -129,21 +129,23 @@ QStringList PluginManager::availablePlugins() const
 
 bool PluginManager::loadPlugin(const QString& pluginId)
 {
-    auto* d = d_func();
-    QMutexLocker locker(&d->mutex);
-    
-    if (d->plugins.contains(pluginId)) {
-        Logger::warning("PluginManager", QString("插件已加载: %1").arg(pluginId));
-        return true;
+    // 先检查是否已加载（不锁定，避免死锁）
+    {
+        auto* d = d_func();
+        QMutexLocker locker(&d->mutex);
+        if (d->plugins.contains(pluginId)) {
+            Logger::warning("PluginManager", QString("插件已加载: %1").arg(pluginId));
+            return true;
+        }
+        
+        if (!d->metadata.contains(pluginId)) {
+            Logger::error("PluginManager", QString("插件不存在: %1").arg(pluginId));
+            emit pluginError(pluginId, "Plugin not found");
+            return false;
+        }
     }
     
-    if (!d->metadata.contains(pluginId)) {
-        Logger::error("PluginManager", QString("插件不存在: %1").arg(pluginId));
-        emit pluginError(pluginId, "Plugin not found");
-        return false;
-    }
-    
-    // 检查依赖
+    // 检查依赖（在锁外进行，避免死锁）
     QStringList missing;
     if (!checkDependencies(pluginId, missing)) {
         QString error = QString("缺少依赖: %1").arg(missing.join(", "));
@@ -152,16 +154,31 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         return false;
     }
     
-    // 加载依赖
-    PluginMetadata meta = d->metadata[pluginId];
-    for (const QString& dep : meta.dependencies) {
-        if (!isPluginLoaded(dep)) {
-            if (!loadPlugin(dep)) {
-                Logger::error("PluginManager", QString("无法加载依赖插件: %1").arg(dep));
-                emit pluginError(pluginId, QString("Failed to load dependency: %1").arg(dep));
-                return false;
+    // 加载依赖（递归调用，但此时没有锁，所以安全）
+    {
+        auto* d = d_func();
+        QMutexLocker locker(&d->mutex);
+        PluginMetadata meta = d->metadata[pluginId];
+        locker.unlock();  // 释放锁，避免递归加载时死锁
+        
+        for (const QString& dep : meta.dependencies) {
+            if (!isPluginLoaded(dep)) {
+                if (!loadPlugin(dep)) {
+                    Logger::error("PluginManager", QString("无法加载依赖插件: %1").arg(dep));
+                    emit pluginError(pluginId, QString("Failed to load dependency: %1").arg(dep));
+                    return false;
+                }
             }
         }
+    }
+    
+    // 现在重新获取锁来加载当前插件
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    // 再次检查是否已加载（可能在加载依赖时被其他线程加载了）
+    if (d->plugins.contains(pluginId)) {
+        return true;
     }
     
     // 查找插件文件
@@ -240,6 +257,9 @@ bool PluginManager::loadPlugin(const QString& pluginId)
     d->loaders[pluginId] = loader;
     d->plugins[pluginId] = plugin;
     
+    // 先释放锁，再发送信号，避免信号槽处理时再次获取锁导致死锁
+    locker.unlock();
+    
     Logger::info("PluginManager", QString("插件加载成功: %1").arg(pluginId));
     emit pluginLoaded(pluginId);
     return true;
@@ -247,25 +267,37 @@ bool PluginManager::loadPlugin(const QString& pluginId)
 
 bool PluginManager::unloadPlugin(const QString& pluginId)
 {
-    auto* d = d_func();
-    QMutexLocker locker(&d->mutex);
+    IPlugin* plugin = nullptr;
+    QPluginLoader* loader = nullptr;
     
-    if (!d->plugins.contains(pluginId)) {
-        return true; // 已经卸载
+    {
+        auto* d = d_func();
+        QMutexLocker locker(&d->mutex);
+        
+        if (!d->plugins.contains(pluginId)) {
+            return true; // 已经卸载
+        }
+        
+        plugin = d->plugins[pluginId];
+        loader = d->loaders[pluginId];
+        
+        // 从映射中移除，但先不删除对象
+        d->loaders.remove(pluginId);
+        d->plugins.remove(pluginId);
     }
     
-    IPlugin* plugin = d->plugins[pluginId];
-    plugin->shutdown();
-    
-    QPluginLoader* loader = d->loaders[pluginId];
-    if (!loader->unload()) {
-        Logger::warning("PluginManager", QString("卸载插件失败: %1, 错误: %2")
-            .arg(pluginId, loader->errorString()));
+    // 在锁外执行可能耗时的操作
+    if (plugin) {
+        plugin->shutdown();
     }
     
-    delete loader;
-    d->loaders.remove(pluginId);
-    d->plugins.remove(pluginId);
+    if (loader) {
+        if (!loader->unload()) {
+            Logger::warning("PluginManager", QString("卸载插件失败: %1, 错误: %2")
+                .arg(pluginId, loader->errorString()));
+        }
+        delete loader;
+    }
     
     Logger::info("PluginManager", QString("插件卸载成功: %1").arg(pluginId));
     emit pluginUnloaded(pluginId);
