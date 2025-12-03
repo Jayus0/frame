@@ -1,24 +1,15 @@
-QT += core widgets network
+QT -= gui
+QT += core
 
-CONFIG += c++17 plugin
-CONFIG += warn_on
+CONFIG += c++17 warn_on ordered
 
-TARGET = EagleFramework
 TEMPLATE = subdirs
 
+# 子项目列表（按编译顺序）
 SUBDIRS += \
     core \
     examples
 
-# 输出目录
-DESTDIR = $$PWD/bin
-OBJECTS_DIR = $$PWD/build/obj
-MOC_DIR = $$PWD/build/moc
-RCC_DIR = $$PWD/build/rcc
-UI_DIR = $$PWD/build/ui
-
-# 包含目录
-INCLUDEPATH += $$PWD/include
-
-# 定义
-DEFINES += EAGLE_FRAMEWORK_VERSION=\\\"1.0.0\\\"
+# 确保 core 在 examples 之前编译
+core.depends = 
+examples.depends = core
