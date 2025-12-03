@@ -335,9 +335,8 @@ bool PluginManager::loadPlugin(const QString& pluginId)
     Logger::info("PluginManager", QString("插件加载成功: %1").arg(pluginId));
     
     // 使用QueuedConnection避免在锁内发送信号导致问题
-    QMetaObject::invokeMethod(this, [this, pluginId]() {
-        emit pluginLoaded(pluginId);
-    }, Qt::QueuedConnection);
+    // 注意：这里已经释放了锁，可以直接发送信号
+    emit pluginLoaded(pluginId);
     
     return true;
 }
@@ -387,10 +386,8 @@ bool PluginManager::unloadPlugin(const QString& pluginId)
     
     Logger::info("PluginManager", QString("插件卸载成功: %1").arg(pluginId));
     
-    // 使用QueuedConnection避免在锁内发送信号
-    QMetaObject::invokeMethod(this, [this, pluginId]() {
-        emit pluginUnloaded(pluginId);
-    }, Qt::QueuedConnection);
+    // 注意：这里已经释放了锁，可以直接发送信号
+    emit pluginUnloaded(pluginId);
     
     return true;
 }
