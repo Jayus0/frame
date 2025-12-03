@@ -477,7 +477,7 @@ bool RBACManager::loadFromConfig(const QVariantMap& config)
         User user(it.key(), userData["username"].toString());
         user.roles = QSet<QString>::fromList(userData["roles"].toStringList());
         user.directPermissions = QSet<QString>::fromList(userData["permissions"].toStringList());
-        user.enabled = userData["enabled"].toBool(true);
+        user.enabled = userData.contains("enabled") ? userData["enabled"].toBool() : true;
         d->users[user.userId] = user;
     }
     
