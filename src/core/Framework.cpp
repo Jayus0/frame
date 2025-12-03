@@ -155,7 +155,7 @@ void Framework::shutdown()
     d->initialized = false;
     
     Logger::info("Framework", "框架关闭完成");
-    emit shutdown();
+    emit shutdownCompleted();
 }
 
 PluginManager* Framework::pluginManager() const

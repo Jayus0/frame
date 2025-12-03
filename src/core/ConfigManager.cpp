@@ -10,6 +10,8 @@
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
+#include <QtCore/QMetaObject>
+#include <QtCore/QMetaMethod>
 
 namespace Eagle {
 namespace Core {

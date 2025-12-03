@@ -7,6 +7,7 @@
 #include <QtCore/QStringList>
 #include <QtWidgets/QWidget>
 #include <QtWidgets/QAction>
+#include "ServiceDescriptor.h"
 
 QT_BEGIN_NAMESPACE
 class QWidget;
@@ -41,18 +42,7 @@ struct PluginContext {
     QObject* serviceRegistry;
 };
 
-// 服务描述符
-struct ServiceDescriptor {
-    QString serviceName;
-    QString version;
-    QStringList methods;
-    QStringList endpoints;
-    QString healthCheck;
-    
-    bool isValid() const {
-        return !serviceName.isEmpty() && !version.isEmpty();
-    }
-};
+// ServiceDescriptor 在 ServiceDescriptor.h 中定义
 
 // 基础插件接口
 class IPlugin : public QObject {

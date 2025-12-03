@@ -38,7 +38,7 @@ public:
     
 signals:
     void initialized();
-    void shutdown();
+    void shutdownCompleted();  // 重命名信号，避免与函数名冲突
     
 private:
     explicit Framework(QObject* parent = nullptr);
