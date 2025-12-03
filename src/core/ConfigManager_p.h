@@ -16,6 +16,9 @@ public:
     QMap<QString, QVariantMap> pluginConfigs;
     mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
     QMap<QString, QList<QPair<QObject*, QByteArray>>> watchers;
+    bool encryptionEnabled = false;  // 是否启用加密
+    QStringList sensitiveKeys;  // 需要加密的键列表
+    QString encryptionKey;  // 加密密钥
 };
 
 } // namespace Core

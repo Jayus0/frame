@@ -1,5 +1,6 @@
 #include "eagle/core/ConfigManager.h"
 #include "ConfigManager_p.h"
+#include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -81,7 +82,7 @@ bool ConfigManager::loadFromJson(const QByteArray& json, ConfigLevel level)
 
 void ConfigManager::loadFromEnvironment()
 {
-    Q_D(ConfigManager);
+    auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -229,7 +230,18 @@ bool ConfigManager::saveToFile(const QString& filePath, ConfigLevel level)
         return false;
     }
     
-    QJsonObject jsonObj = QJsonObject::fromVariantMap(*sourceConfig);
+    QVariantMap configToSave = *sourceConfig;
+    
+    // 如果启用加密，加密敏感字段
+    {
+        auto* d = d_func();
+        QMutexLocker locker(&d->mutex);
+        if (d->encryptionEnabled && !d->sensitiveKeys.isEmpty()) {
+            configToSave = ConfigEncryption::encryptConfig(configToSave, d->sensitiveKeys, d->encryptionKey);
+        }
+    }
+    
+    QJsonObject jsonObj = QJsonObject::fromVariantMap(configToSave);
     QJsonDocument doc(jsonObj);
     
     QFile file(filePath);
@@ -277,6 +289,31 @@ void ConfigManager::watchConfig(const QString& key, QObject* receiver, const cha
             }
         }
     });
+}
+
+void ConfigManager::setEncryptionEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->encryptionEnabled = enabled;
+    Logger::info("ConfigManager", QString("配置加密%1").arg(enabled ? "启用" : "禁用"));
+}
+
+void ConfigManager::setSensitiveKeys(const QStringList& keys)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->sensitiveKeys = keys;
+    Logger::info("ConfigManager", QString("设置敏感配置键: %1").arg(keys.join(", ")));
+}
+
+void ConfigManager::setEncryptionKey(const QString& key)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->encryptionKey = key;
+    ConfigEncryption::setDefaultKey(key);
+    Logger::info("ConfigManager", "设置加密密钥");
 }
 
 } // namespace Core

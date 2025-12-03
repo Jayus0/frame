@@ -5,6 +5,10 @@ set(SOURCES
     ConfigManager.cpp
     Logger.cpp
     Framework.cpp
+    PluginSignature.cpp
+    CircuitBreaker.cpp
+    ConfigEncryption.cpp
+    PluginIsolation.cpp
 )
 
 set(HEADERS
@@ -16,6 +20,10 @@ set(HEADERS
     ${CMAKE_SOURCE_DIR}/include/eagle/core/ConfigManager.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/Logger.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/Framework.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/PluginSignature.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/CircuitBreaker.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/ConfigEncryption.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/PluginIsolation.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})

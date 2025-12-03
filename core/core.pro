@@ -13,7 +13,11 @@ SOURCES += \
     ../src/core/EventBus.cpp \
     ../src/core/ConfigManager.cpp \
     ../src/core/Logger.cpp \
-    ../src/core/Framework.cpp
+    ../src/core/Framework.cpp \
+    ../src/core/PluginSignature.cpp \
+    ../src/core/CircuitBreaker.cpp \
+    ../src/core/ConfigEncryption.cpp \
+    ../src/core/PluginIsolation.cpp
 
 # 头文件
 HEADERS += \
@@ -29,7 +33,11 @@ HEADERS += \
     ../src/core/ConfigManager_p.h \
     ../include/eagle/core/Logger.h \
     ../include/eagle/core/Framework.h \
-    ../src/core/Framework_p.h
+    ../src/core/Framework_p.h \
+    ../include/eagle/core/PluginSignature.h \
+    ../include/eagle/core/CircuitBreaker.h \
+    ../include/eagle/core/ConfigEncryption.h \
+    ../include/eagle/core/PluginIsolation.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

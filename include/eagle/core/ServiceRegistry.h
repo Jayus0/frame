@@ -6,7 +6,9 @@
 #include <QtCore/QVariant>
 #include <QtCore/QMap>
 #include <QtCore/QMutex>
+#include <QtCore/QTimer>
 #include "ServiceDescriptor.h"
+#include "CircuitBreaker.h"
 
 namespace Eagle {
 namespace Core {
@@ -39,6 +41,11 @@ public:
                         const QString& method,
                         const QVariantList& args = QVariantList(),
                         int timeout = 5000);
+    
+    // 配置
+    void setDefaultTimeout(int timeoutMs);
+    void setCircuitBreakerEnabled(bool enabled);
+    void setCircuitBreakerConfig(const QString& serviceName, const CircuitBreakerConfig& config);
     
     // 健康检查
     bool checkServiceHealth(const QString& serviceName) const;

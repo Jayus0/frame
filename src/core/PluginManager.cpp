@@ -1,5 +1,7 @@
 #include "eagle/core/PluginManager.h"
 #include "PluginManager_p.h"
+#include "eagle/core/PluginSignature.h"
+#include "eagle/core/PluginIsolation.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -106,6 +108,31 @@ bool PluginManager::scanPlugins()
                 Logger::warning("PluginManager", QString("插件元数据无效: %1").arg(filePath));
                 loader.unload();
                 continue;
+            }
+            
+            // 如果要求签名验证，检查插件签名
+            if (d->signatureRequired) {
+                QString sigPath = PluginSignatureVerifier::findSignatureFile(filePath);
+                if (sigPath.isEmpty()) {
+                    Logger::warning("PluginManager", QString("插件缺少签名文件: %1").arg(filePath));
+                    loader.unload();
+                    continue;
+                }
+                
+                PluginSignature signature = PluginSignatureVerifier::loadFromFile(sigPath);
+                if (!signature.isValid()) {
+                    Logger::warning("PluginManager", QString("插件签名无效: %1").arg(filePath));
+                    loader.unload();
+                    continue;
+                }
+                
+                if (!PluginSignatureVerifier::verify(filePath, signature)) {
+                    Logger::error("PluginManager", QString("插件签名验证失败: %1").arg(filePath));
+                    loader.unload();
+                    continue;
+                }
+                
+                Logger::info("PluginManager", QString("插件签名验证通过: %1").arg(meta.name));
             }
             
             d->metadata[meta.pluginId] = meta;
@@ -217,6 +244,27 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         return false;
     }
     
+    // 如果要求签名验证，再次验证签名（加载前最后检查）
+    {
+        auto* d = d_func();
+        QMutexLocker locker(&d->mutex);
+        if (d->signatureRequired) {
+            QString sigPath = PluginSignatureVerifier::findSignatureFile(pluginPath);
+            if (sigPath.isEmpty()) {
+                Logger::error("PluginManager", QString("插件缺少签名文件: %1").arg(pluginPath));
+                emit pluginError(pluginId, "Plugin signature file not found");
+                return false;
+            }
+            
+            PluginSignature signature = PluginSignatureVerifier::loadFromFile(sigPath);
+            if (!signature.isValid() || !PluginSignatureVerifier::verify(pluginPath, signature)) {
+                Logger::error("PluginManager", QString("插件签名验证失败: %1").arg(pluginPath));
+                emit pluginError(pluginId, "Plugin signature verification failed");
+                return false;
+            }
+        }
+    }
+    
     // 加载插件
     QPluginLoader* loader = new QPluginLoader(pluginPath, this);
     QObject* pluginObj = loader->instance();
@@ -237,20 +285,27 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         return false;
     }
     
-    // 初始化插件
+    // 在隔离环境中初始化插件
     PluginContext context;
     context.pluginPath = pluginPath;
     context.configPath = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/" + pluginId;
     
-    // 获取框架实例以传递服务注册中心和事件总线
-    // 注意：这里需要框架实例，但为了避免循环依赖，我们通过信号传递
-    // 或者插件在初始化后自己获取框架实例
+    // 注册异常处理器
+    PluginIsolation::registerExceptionHandler(pluginId, [this, pluginId](const QString& error) {
+        emit pluginError(pluginId, error);
+    });
     
-    if (!plugin->initialize(context)) {
-        Logger::error("PluginManager", QString("插件初始化失败: %1").arg(pluginId));
+    // 在隔离环境中执行初始化
+    bool initSuccess = PluginIsolation::executeIsolated(pluginId, [plugin, context]() -> bool {
+        return plugin->initialize(context);
+    });
+    
+    if (!initSuccess) {
+        QString error = QString("插件初始化失败: %1").arg(pluginId);
+        Logger::error("PluginManager", error);
         loader->unload();
         delete loader;
-        emit pluginError(pluginId, "Plugin initialization failed");
+        emit pluginError(pluginId, error);
         return false;
     }
     
@@ -286,9 +341,12 @@ bool PluginManager::unloadPlugin(const QString& pluginId)
         d->plugins.remove(pluginId);
     }
     
-    // 在锁外执行可能耗时的操作
+    // 在隔离环境中执行关闭操作
     if (plugin) {
-        plugin->shutdown();
+        PluginIsolation::executeIsolated(pluginId, [plugin]() -> bool {
+            plugin->shutdown();
+            return true;
+        });
     }
     
     if (loader) {

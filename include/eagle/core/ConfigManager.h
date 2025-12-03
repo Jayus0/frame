@@ -51,6 +51,11 @@ public:
     // 配置监听
     void watchConfig(const QString& key, QObject* receiver, const char* method);
     
+    // 加密配置
+    void setEncryptionEnabled(bool enabled);
+    void setSensitiveKeys(const QStringList& keys);
+    void setEncryptionKey(const QString& key);
+    
 signals:
     void configChanged(const QString& key, const QVariant& oldValue, const QVariant& newValue);
     void configReloaded();
