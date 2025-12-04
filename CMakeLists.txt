@@ -23,7 +23,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # 子目录
 add_subdirectory(src/core)
 add_subdirectory(src/plugins)
-add_subdirectory(src/tools)
+add_subdirectory(tools)
 add_subdirectory(examples)
 
 # 安装规则
