@@ -68,6 +68,9 @@ public:
         QCommandLineOption resourceOption("resource", "Resource monitoring");
         parser.addOption(resourceOption);
         
+        QCommandLineOption dependencyOption("dependency", "Dependency management");
+        parser.addOption(dependencyOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -93,6 +96,8 @@ public:
             return handleDiagnostic(args.mid(1));
         } else if (parser.isSet(resourceOption) || command == "resource") {
             return handleResource(args.mid(1));
+        } else if (parser.isSet(dependencyOption) || command == "dependency") {
+            return handleDependency(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1090,6 +1095,84 @@ private:
         } else {
             std::cerr << "Unknown resource command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli resource show|set|events'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleDependency(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli dependency <check|circular> [plugin-id]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::PluginManager* pluginManager = framework->pluginManager();
+        if (!pluginManager) {
+            std::cerr << "Error: PluginManager not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "check") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli dependency check <plugin-id>" << std::endl;
+                return 1;
+            }
+            
+            QString pluginId = args[1];
+            Eagle::Core::PluginMetadata meta = pluginManager->getPluginMetadata(pluginId);
+            if (!meta.isValid()) {
+                std::cerr << "Error: Plugin not found: " << pluginId.toStdString() << std::endl;
+                return 1;
+            }
+            
+            QStringList allDeps = pluginManager->resolveDependencies(pluginId);
+            QStringList directDeps = meta.dependencies;
+            
+            std::cout << "Dependencies for " << pluginId.toStdString() << ":" << std::endl;
+            std::cout << "  Direct dependencies (" << directDeps.size() << "):" << std::endl;
+            for (const QString& dep : directDeps) {
+                std::cout << "    - " << dep.toStdString() << std::endl;
+            }
+            std::cout << "  All dependencies (" << allDeps.size() << "):" << std::endl;
+            for (const QString& dep : allDeps) {
+                std::cout << "    - " << dep.toStdString() << std::endl;
+            }
+            
+            // 检查循环依赖
+            QStringList cyclePath;
+            bool hasCycle = pluginManager->detectCircularDependencies(pluginId, cyclePath);
+            std::cout << "  Circular dependency: " << (hasCycle ? "Yes" : "No") << std::endl;
+            if (hasCycle) {
+                std::cout << "  Cycle path: " << cyclePath.join(" -> ").toStdString() << std::endl;
+            }
+            
+            return 0;
+        } else if (subCommand == "circular") {
+            QList<QStringList> allCycles = pluginManager->detectAllCircularDependencies();
+            
+            if (allCycles.isEmpty()) {
+                std::cout << "No circular dependencies detected." << std::endl;
+                return 0;
+            }
+            
+            std::cout << "Circular dependencies found (" << allCycles.size() << "):" << std::endl;
+            for (int i = 0; i < allCycles.size(); ++i) {
+                const QStringList& cycle = allCycles[i];
+                std::cout << "  Cycle " << (i + 1) << ": " << cycle.join(" -> ").toStdString() << std::endl;
+            }
+            
+            return 0;
+        } else {
+            std::cerr << "Unknown dependency command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli dependency check|circular'" << std::endl;
             return 1;
         }
     }

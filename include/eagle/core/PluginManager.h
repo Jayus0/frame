@@ -48,6 +48,11 @@ public:
     QStringList resolveDependencies(const QString& pluginId) const;
     bool checkDependencies(const QString& pluginId, QStringList& missing) const;
     
+    // 循环依赖检测
+    bool detectCircularDependencies(const QString& pluginId, QStringList& cyclePath) const;
+    QList<QStringList> detectAllCircularDependencies() const;
+    bool hasCircularDependencies() const;
+    
     // 热更新
     bool hotUpdatePlugin(const QString& pluginId);
     

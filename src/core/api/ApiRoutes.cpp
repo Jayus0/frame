@@ -1361,6 +1361,79 @@ void registerApiRoutes(ApiServer* server) {
         }
     });
     
+    // GET /api/v1/plugins/{id}/dependencies - 获取插件依赖关系
+    server->get("/api/v1/plugins/{id}/dependencies", [framework](const HttpRequest& req, HttpResponse& resp) {
+        if (!framework) {
+            resp.setError(500, "Framework not available");
+            return;
+        }
+        
+        PluginManager* pluginManager = framework->pluginManager();
+        if (!pluginManager) {
+            resp.setError(500, "PluginManager not available");
+            return;
+        }
+        
+        QString pluginId = req.pathParams.value("id");
+        if (pluginId.isEmpty()) {
+            resp.setError(400, "Plugin ID is required");
+            return;
+        }
+        
+        PluginMetadata meta = pluginManager->getPluginMetadata(pluginId);
+        if (!meta.isValid()) {
+            resp.setError(404, "Plugin not found");
+            return;
+        }
+        
+        QStringList allDeps = pluginManager->resolveDependencies(pluginId);
+        QStringList directDeps = meta.dependencies;
+        
+        QJsonObject result;
+        result["pluginId"] = pluginId;
+        result["directDependencies"] = QJsonArray::fromStringList(directDeps);
+        result["allDependencies"] = QJsonArray::fromStringList(allDeps);
+        
+        // 检查循环依赖
+        QStringList cyclePath;
+        bool hasCycle = pluginManager->detectCircularDependencies(pluginId, cyclePath);
+        result["hasCircularDependency"] = hasCycle;
+        if (hasCycle) {
+            result["circularPath"] = QJsonArray::fromStringList(cyclePath);
+        }
+        
+        resp.setJson(result);
+    });
+    
+    // GET /api/v1/plugins/dependencies/circular - 获取所有循环依赖
+    server->get("/api/v1/plugins/dependencies/circular", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        if (!framework) {
+            resp.setError(500, "Framework not available");
+            return;
+        }
+        
+        PluginManager* pluginManager = framework->pluginManager();
+        if (!pluginManager) {
+            resp.setError(500, "PluginManager not available");
+            return;
+        }
+        
+        QList<QStringList> allCycles = pluginManager->detectAllCircularDependencies();
+        
+        QJsonArray cyclesArray;
+        for (const QStringList& cycle : allCycles) {
+            cyclesArray.append(QJsonArray::fromStringList(cycle));
+        }
+        
+        QJsonObject result;
+        result["hasCircularDependencies"] = !allCycles.isEmpty();
+        result["cycles"] = cyclesArray;
+        result["count"] = allCycles.size();
+        
+        resp.setJson(result);
+    });
+    
     // GET /api/v1/plugins/{id}/resources/events - 获取资源超限事件
     server->get("/api/v1/plugins/{id}/resources/events", [framework](const HttpRequest& req, HttpResponse& resp) {
         Q_UNUSED(req);

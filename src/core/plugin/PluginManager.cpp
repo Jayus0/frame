@@ -4,6 +4,7 @@
 #include "eagle/core/PluginIsolation.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/Logger.h"
+#include "eagle/core/AlertSystem.h"
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -14,6 +15,8 @@
 #include <QtCore/QMutexLocker>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QDebug>
+#include <QtCore/QSet>
+#include <algorithm>
 
 namespace Eagle {
 namespace Core {
@@ -177,6 +180,27 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         QString error = QString("缺少依赖: %1").arg(missing.join(", "));
         Logger::error("PluginManager", error);
         emit pluginError(pluginId, error);
+        return false;
+    }
+    
+    // 检查循环依赖
+    QStringList cyclePath;
+    if (detectCircularDependencies(pluginId, cyclePath)) {
+        QString cycleStr = cyclePath.join(" -> ");
+        Logger::error("PluginManager", QString("检测到循环依赖: %1").arg(cycleStr));
+        emit pluginError(pluginId, QString("Circular dependency detected: %1").arg(cycleStr));
+        
+        // 发送告警
+        Framework* framework = qobject_cast<Framework*>(parent());
+        if (framework && framework->alertSystem()) {
+            framework->alertSystem()->triggerAlert(
+                "plugin.circular_dependency",
+                "插件循环依赖",
+                AlertLevel::Error,
+                QString("插件 %1 存在循环依赖: %2").arg(pluginId, cycleStr)
+            );
+        }
+        
         return false;
     }
     
@@ -476,6 +500,120 @@ bool PluginManager::hotUpdatePlugin(const QString& pluginId)
 {
     Logger::info("PluginManager", QString("开始热更新插件: %1").arg(pluginId));
     return reloadPlugin(pluginId);
+}
+
+bool PluginManager::detectCircularDependencies(const QString& pluginId, QStringList& cyclePath) const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    if (!d->metadata.contains(pluginId)) {
+        return false;
+    }
+    
+    // 使用DFS检测循环依赖
+    QMap<QString, int> visited;  // 0: 未访问, 1: 正在访问, 2: 已访问
+    QStringList path;
+    
+    std::function<bool(const QString&)> dfs = [&](const QString& current) -> bool {
+        if (visited.value(current) == 1) {
+            // 发现循环，构建循环路径
+            int startIndex = path.indexOf(current);
+            if (startIndex >= 0) {
+                cyclePath = path.mid(startIndex);
+                cyclePath.append(current);  // 形成闭环
+            } else {
+                cyclePath = path;
+                cyclePath.append(current);
+            }
+            return true;
+        }
+        
+        if (visited.value(current) == 2) {
+            // 已访问过，无循环
+            return false;
+        }
+        
+        visited[current] = 1;  // 标记为正在访问
+        path.append(current);
+        
+        if (d->metadata.contains(current)) {
+            PluginMetadata meta = d->metadata[current];
+            for (const QString& dep : meta.dependencies) {
+                if (dfs(dep)) {
+                    return true;  // 发现循环
+                }
+            }
+        }
+        
+        path.removeLast();
+        visited[current] = 2;  // 标记为已访问
+        return false;
+    };
+    
+    return dfs(pluginId);
+}
+
+QList<QStringList> PluginManager::detectAllCircularDependencies() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    QList<QStringList> allCycles;
+    QSet<QString> processedCycles;  // 用于去重
+    
+    // 对每个插件检测循环依赖
+    for (const QString& pluginId : d->metadata.keys()) {
+        QStringList cyclePath;
+        if (detectCircularDependencies(pluginId, cyclePath)) {
+            // 标准化循环路径（从最小ID开始）
+            if (!cyclePath.isEmpty()) {
+                // 找到最小ID的位置
+                QString minId = cyclePath.first();
+                int minIndex = 0;
+                for (int i = 1; i < cyclePath.size(); ++i) {
+                    if (cyclePath[i] < minId) {
+                        minId = cyclePath[i];
+                        minIndex = i;
+                    }
+                }
+                
+                // 重新排列路径
+                QStringList normalizedPath;
+                for (int i = 0; i < cyclePath.size(); ++i) {
+                    normalizedPath.append(cyclePath[(minIndex + i) % cyclePath.size()]);
+                }
+                
+                // 去重：使用排序后的路径作为key
+                QStringList sortedPath = normalizedPath;
+                std::sort(sortedPath.begin(), sortedPath.end());
+                QString cycleKey = sortedPath.join("->");
+                
+                if (!processedCycles.contains(cycleKey)) {
+                    processedCycles.insert(cycleKey);
+                    allCycles.append(normalizedPath);
+                }
+            }
+        }
+    }
+    
+    return allCycles;
+}
+
+bool PluginManager::hasCircularDependencies() const
+{
+    QStringList dummy;
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    // 检查所有插件是否有循环依赖
+    for (const QString& pluginId : d->metadata.keys()) {
+        if (detectCircularDependencies(pluginId, dummy)) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 } // namespace Core
