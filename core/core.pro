@@ -24,7 +24,9 @@ SOURCES += \
     ../src/core/AlertSystem.cpp \
     ../src/core/RateLimiter.cpp \
     ../src/core/ApiKeyManager.cpp \
-    ../src/core/SessionManager.cpp
+    ../src/core/SessionManager.cpp \
+    ../src/core/ApiServer.cpp \
+    ../src/core/ApiRoutes.cpp
 
 # 头文件
 HEADERS += \
@@ -58,7 +60,10 @@ HEADERS += \
     ../include/eagle/core/ApiKeyManager.h \
     ../src/core/ApiKeyManager_p.h \
     ../include/eagle/core/SessionManager.h \
-    ../src/core/SessionManager_p.h
+    ../src/core/SessionManager_p.h \
+    ../include/eagle/core/ApiServer.h \
+    ../src/core/ApiServer_p.h \
+    ../include/eagle/core/ApiRoutes.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include
