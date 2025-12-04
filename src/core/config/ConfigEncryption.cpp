@@ -44,7 +44,6 @@ QString ConfigEncryption::encrypt(const QString& value, const QString& key, Encr
     
     QString actualKey = key.isEmpty() ? getDefaultKey() : key;
     QByteArray encryptedData;
-    int version = 1;
     
     if (algorithm == EncryptionAlgorithm::AES256) {
         // 使用AES-256加密
@@ -65,7 +64,6 @@ QString ConfigEncryption::encrypt(const QString& value, const QString& key, Encr
             result.append(iv);
             result.append(encryptedData);
             encryptedData = result;
-            version = s_currentKeyVersion.version;
         }
     }
     
@@ -89,7 +87,6 @@ QString ConfigEncryption::encrypt(const QString& value, const QString& key, Encr
         result.append(static_cast<char>(EncryptionAlgorithm::XOR));
         result.append(encryptedData);
         encryptedData = result;
-        version = 1;
     }
     
     return QString::fromUtf8(encryptedData.toBase64());
@@ -110,7 +107,7 @@ QString ConfigEncryption::decrypt(const QString& encryptedValue, const QString& 
     }
     
     // 读取版本和算法
-    int version = static_cast<unsigned char>(encrypted[0]);
+    Q_UNUSED(static_cast<unsigned char>(encrypted[0]));  // 版本号，暂时未使用
     EncryptionAlgorithm algorithm = static_cast<EncryptionAlgorithm>(static_cast<unsigned char>(encrypted[1]));
     QByteArray data = encrypted.mid(2);
     
@@ -333,7 +330,8 @@ QByteArray ConfigEncryption::deriveKeyPBKDF2(const QString& password, const QByt
     // 使用Qt实现PBKDF2（简化版，使用HMAC-SHA256）
     QByteArray key;
     QByteArray u = salt;
-    u.append(0x00).append(0x00).append(0x00).append(0x01);  // 添加块索引
+    u.append(static_cast<char>(0x00)).append(static_cast<char>(0x00))
+     .append(static_cast<char>(0x00)).append(static_cast<char>(0x01));  // 添加块索引
     
     for (int i = 0; i < iterations; ++i) {
         u = QCryptographicHash::hash((password.toUtf8() + u), QCryptographicHash::Sha256);
