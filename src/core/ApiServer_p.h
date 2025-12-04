@@ -21,7 +21,7 @@ struct Route {
     RequestHandler handler;      // 处理器函数
 };
 
-// 定义ApiServerPrivate类（ApiServer::Private的别名）
+// 定义ApiServerPrivate类（非嵌套类，在ApiServer.h中前向声明）
 class ApiServerPrivate {
 public:
     ApiServerPrivate(ApiServer* qq)

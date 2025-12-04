@@ -16,6 +16,9 @@
 namespace Eagle {
 namespace Core {
 
+// 前向声明（必须在ApiServer类定义之前）
+class ApiServerPrivate;
+
 class Framework;
 class HttpRequest;
 class HttpResponse;
@@ -131,7 +134,7 @@ private slots:
 private:
     Q_DISABLE_COPY(ApiServer)
     
-    class ApiServerPrivate;
+    // ApiServerPrivate 已在命名空间级别前向声明
     ApiServerPrivate* d;
     
     inline ApiServerPrivate* d_func() { return d; }

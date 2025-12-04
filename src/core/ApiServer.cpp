@@ -1,7 +1,7 @@
 #include "eagle/core/ApiServer.h"
-#include "ApiServer_p.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/Logger.h"
+#include "ApiServer_p.h"  // 必须在ApiServer.h之后包含，以获取ApiServerPrivate的完整定义
 #include <QtCore/QStringList>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
