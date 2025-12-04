@@ -1652,7 +1652,13 @@ void registerApiRoutes(ApiServer* server) {
         if (result.valid) {
             resp.setSuccess(response);
         } else {
-            resp.setError(400, "Validation Failed", "配置验证失败", response);
+            // 设置错误响应，包含验证详情
+            response["error"] = true;
+            response["code"] = 400;
+            response["message"] = "Validation Failed";
+            response["details"] = "配置验证失败";
+            resp.statusCode = 400;
+            resp.setJson(response);
         }
     });
     
@@ -1836,7 +1842,13 @@ void registerApiRoutes(ApiServer* server) {
         if (valid) {
             resp.setSuccess(result);
         } else {
-            resp.setError(400, "Verification Failed", "签名验证失败", result);
+            // 设置错误响应，包含验证详情
+            result["error"] = true;
+            result["code"] = 400;
+            result["message"] = "Verification Failed";
+            result["details"] = "签名验证失败";
+            resp.statusCode = 400;
+            resp.setJson(result);
         }
     });
     
