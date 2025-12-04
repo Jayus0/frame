@@ -31,7 +31,8 @@ SOURCES += \
     ../src/core/DegradationPolicy.cpp \
     ../src/core/NotificationChannel.cpp \
     ../src/core/EmailChannel.cpp \
-    ../src/core/WebhookChannel.cpp
+    ../src/core/WebhookChannel.cpp \
+    ../src/core/BackupManager.cpp
 
 # 头文件
 HEADERS += \
@@ -75,7 +76,9 @@ HEADERS += \
     ../src/core/DegradationPolicy_p.h \
     ../include/eagle/core/NotificationChannel.h \
     ../include/eagle/core/EmailChannel.h \
-    ../include/eagle/core/WebhookChannel.h
+    ../include/eagle/core/WebhookChannel.h \
+    ../include/eagle/core/BackupManager.h \
+    ../src/core/BackupManager_p.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

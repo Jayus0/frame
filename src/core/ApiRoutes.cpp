@@ -11,6 +11,7 @@
 #include "eagle/core/RateLimiter.h"
 #include "eagle/core/Logger.h"
 #include "eagle/core/IPlugin.h"
+#include "eagle/core/BackupManager.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -481,6 +482,217 @@ void registerApiRoutes(ApiServer* server) {
         AuditLogManager* auditLog = framework->auditLogManager();
         if (auditLog) {
             auditLog->log(userId, "POST /api/v1/config", "config", AuditLevel::Info, true);
+        }
+    });
+    
+    // ============================================================================
+    // 备份管理API
+    // ============================================================================
+    
+    // GET /api/v1/backups - 获取备份列表
+    server->get("/api/v1/backups", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "backup.list")) {
+            resp.setError(403, "Forbidden", "缺少权限: backup.list");
+            return;
+        }
+        
+        BackupManager* backupManager = framework->backupManager();
+        if (!backupManager) {
+            resp.setError(500, "BackupManager not available");
+            return;
+        }
+        
+        QList<BackupInfo> backups = backupManager->listBackups();
+        QJsonArray backupArray;
+        for (const BackupInfo& info : backups) {
+            QJsonObject backup;
+            backup["id"] = info.id;
+            backup["name"] = info.name;
+            backup["type"] = static_cast<int>(info.type);
+            backup["trigger"] = static_cast<int>(info.trigger);
+            backup["createTime"] = info.createTime.toString(Qt::ISODate);
+            backup["description"] = info.description;
+            backup["size"] = info.size;
+            backup["filePath"] = info.filePath;
+            backupArray.append(backup);
+        }
+        
+        QJsonObject data;
+        data["backups"] = backupArray;
+        data["count"] = backupArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // POST /api/v1/backups - 创建备份
+    server->post("/api/v1/backups", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "backup.create")) {
+            resp.setError(403, "Forbidden", "缺少权限: backup.create");
+            return;
+        }
+        
+        BackupManager* backupManager = framework->backupManager();
+        if (!backupManager) {
+            resp.setError(500, "BackupManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.body.toJsonObject();
+        BackupType type = static_cast<BackupType>(body.value("type").toInt(0));
+        QString name = body.value("name").toString();
+        QString description = body.value("description").toString();
+        
+        QString backupId = backupManager->createBackup(type, name, description);
+        if (backupId.isEmpty()) {
+            resp.setError(500, "Failed to create backup");
+            return;
+        }
+        
+        BackupInfo info = backupManager->getBackupInfo(backupId);
+        QJsonObject backup;
+        backup["id"] = info.id;
+        backup["name"] = info.name;
+        backup["type"] = static_cast<int>(info.type);
+        backup["createTime"] = info.createTime.toString(Qt::ISODate);
+        backup["description"] = info.description;
+        backup["size"] = info.size;
+        
+        resp.setSuccess(backup);
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/backups", backupId, AuditLevel::Info, true);
+        }
+    });
+    
+    // GET /api/v1/backups/{id} - 获取备份详情
+    server->get("/api/v1/backups/{id}", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "backup.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: backup.view");
+            return;
+        }
+        
+        BackupManager* backupManager = framework->backupManager();
+        if (!backupManager) {
+            resp.setError(500, "BackupManager not available");
+            return;
+        }
+        
+        QString backupId = req.pathParams.value("id");
+        if (backupId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing backup ID");
+            return;
+        }
+        
+        BackupInfo info = backupManager->getBackupInfo(backupId);
+        if (!info.isValid()) {
+            resp.setError(404, "Not Found", QString("Backup not found: %1").arg(backupId));
+            return;
+        }
+        
+        QJsonObject backup;
+        backup["id"] = info.id;
+        backup["name"] = info.name;
+        backup["type"] = static_cast<int>(info.type);
+        backup["trigger"] = static_cast<int>(info.trigger);
+        backup["createTime"] = info.createTime.toString(Qt::ISODate);
+        backup["description"] = info.description;
+        backup["size"] = info.size;
+        backup["filePath"] = info.filePath;
+        
+        resp.setSuccess(backup);
+    });
+    
+    // POST /api/v1/backups/{id}/restore - 恢复备份
+    server->post("/api/v1/backups/{id}/restore", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "backup.restore")) {
+            resp.setError(403, "Forbidden", "缺少权限: backup.restore");
+            return;
+        }
+        
+        BackupManager* backupManager = framework->backupManager();
+        if (!backupManager) {
+            resp.setError(500, "BackupManager not available");
+            return;
+        }
+        
+        QString backupId = req.pathParams.value("id");
+        if (backupId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing backup ID");
+            return;
+        }
+        
+        bool success = backupManager->restoreBackup(backupId, true);
+        if (success) {
+            QJsonObject data;
+            data["backupId"] = backupId;
+            data["status"] = "restored";
+            resp.setSuccess(data);
+        } else {
+            resp.setError(500, "Failed to restore backup");
+        }
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/backups/{id}/restore", backupId, 
+                         success ? AuditLevel::Info : AuditLevel::Warning, success);
+        }
+    });
+    
+    // DELETE /api/v1/backups/{id} - 删除备份
+    server->delete_("/api/v1/backups/{id}", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "backup.delete")) {
+            resp.setError(403, "Forbidden", "缺少权限: backup.delete");
+            return;
+        }
+        
+        BackupManager* backupManager = framework->backupManager();
+        if (!backupManager) {
+            resp.setError(500, "BackupManager not available");
+            return;
+        }
+        
+        QString backupId = req.pathParams.value("id");
+        if (backupId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing backup ID");
+            return;
+        }
+        
+        bool success = backupManager->deleteBackup(backupId);
+        if (success) {
+            QJsonObject data;
+            data["backupId"] = backupId;
+            data["status"] = "deleted";
+            resp.setSuccess(data);
+        } else {
+            resp.setError(404, "Not Found", QString("Backup not found: %1").arg(backupId));
+        }
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "DELETE /api/v1/backups/{id}", backupId, AuditLevel::Info, success);
         }
     });
 }

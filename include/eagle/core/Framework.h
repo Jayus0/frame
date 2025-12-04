@@ -14,6 +14,7 @@
 #include "ApiKeyManager.h"
 #include "SessionManager.h"
 #include "ApiServer.h"
+#include "BackupManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -47,6 +48,7 @@ public:
     ApiKeyManager* apiKeyManager() const;
     SessionManager* sessionManager() const;
     ApiServer* apiServer() const;
+    BackupManager* backupManager() const;
     
     // 框架信息
     QString version() const;

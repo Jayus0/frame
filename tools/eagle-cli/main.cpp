@@ -8,7 +8,12 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
 #include <iostream>
+#include "eagle/core/Framework.h"
+#include "eagle/core/BackupManager.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -39,6 +44,9 @@ public:
         QCommandLineOption debugOption("debug", "Debug commands");
         parser.addOption(debugOption);
         
+        QCommandLineOption backupOption("backup", "Backup management");
+        parser.addOption(backupOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -52,6 +60,8 @@ public:
             return handleConfig(args.mid(1));
         } else if (parser.isSet(debugOption) || command == "debug") {
             return handleDebug(args.mid(1));
+        } else if (parser.isSet(backupOption) || command == "backup") {
+            return handleBackup(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;

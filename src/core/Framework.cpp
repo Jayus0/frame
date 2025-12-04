@@ -70,6 +70,7 @@ bool Framework::initialize(const QString& configPath)
     d->apiKeyManager = new ApiKeyManager(this);
     d->sessionManager = new SessionManager(this);
     d->apiServer = new ApiServer(this);
+    d->backupManager = new BackupManager(d->configManager, this);
     
     // 配置ServiceRegistry使用RBAC和限流器
     if (d->serviceRegistry) {
@@ -191,6 +192,9 @@ void Framework::shutdown()
     delete d->apiServer;
     d->apiServer = nullptr;
     
+    delete d->backupManager;
+    d->backupManager = nullptr;
+    
     delete d->alertSystem;
     d->alertSystem = nullptr;
     
@@ -290,6 +294,11 @@ SessionManager* Framework::sessionManager() const
 ApiServer* Framework::apiServer() const
 {
     return d->apiServer;
+}
+
+BackupManager* Framework::backupManager() const
+{
+    return d->backupManager;
 }
 
 QString Framework::version() const

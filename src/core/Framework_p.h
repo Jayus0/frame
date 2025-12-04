@@ -13,6 +13,7 @@
 #include "eagle/core/ApiKeyManager.h"
 #include "eagle/core/SessionManager.h"
 #include "eagle/core/ApiServer.h"
+#include "eagle/core/BackupManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -31,6 +32,7 @@ public:
     ApiKeyManager* apiKeyManager;
     SessionManager* sessionManager;
     ApiServer* apiServer;
+    BackupManager* backupManager;
     bool initialized;
     
     Private() 
@@ -46,6 +48,7 @@ public:
         , apiKeyManager(nullptr)
         , sessionManager(nullptr)
         , apiServer(nullptr)
+        , backupManager(nullptr)
         , initialized(false)
     {
     }
