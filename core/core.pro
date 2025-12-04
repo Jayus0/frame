@@ -26,7 +26,8 @@ SOURCES += \
     ../src/core/ApiKeyManager.cpp \
     ../src/core/SessionManager.cpp \
     ../src/core/ApiServer.cpp \
-    ../src/core/ApiRoutes.cpp
+    ../src/core/ApiRoutes.cpp \
+    ../src/core/RetryPolicy.cpp
 
 # 头文件
 HEADERS += \
@@ -63,7 +64,9 @@ HEADERS += \
     ../src/core/SessionManager_p.h \
     ../include/eagle/core/ApiServer.h \
     ../src/core/ApiServer_p.h \
-    ../include/eagle/core/ApiRoutes.h
+    ../include/eagle/core/ApiRoutes.h \
+    ../include/eagle/core/RetryPolicy.h \
+    ../src/core/RetryPolicy_p.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

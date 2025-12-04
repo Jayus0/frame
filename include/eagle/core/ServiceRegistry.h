@@ -9,6 +9,7 @@
 #include <QtCore/QTimer>
 #include "ServiceDescriptor.h"
 #include "CircuitBreaker.h"
+#include "RetryPolicy.h"
 
 namespace Eagle {
 namespace Core {
@@ -58,9 +59,21 @@ public:
     bool isRateLimitEnabled() const;
     void setServiceRateLimit(const QString& serviceName, int maxRequests, int windowMs);
     
+    // 重试策略配置
+    void setRetryEnabled(bool enabled);
+    bool isRetryEnabled() const;
+    void setRetryPolicy(const QString& serviceName, const RetryPolicyConfig& config);
+    RetryPolicyConfig getRetryPolicy(const QString& serviceName) const;
+    
     // 健康检查
     bool checkServiceHealth(const QString& serviceName) const;
     
+private:
+    // 重试辅助函数
+    bool isRetryableError(const QString& serviceName, const QString& error, const RetryPolicyConfig& config) const;
+    int calculateRetryDelay(const RetryPolicyConfig& config, int attemptCount) const;
+    
+public:
 signals:
     void serviceRegistered(const QString& serviceName, const QString& version);
     void serviceUnregistered(const QString& serviceName, const QString& version);

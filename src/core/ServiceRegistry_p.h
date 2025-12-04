@@ -6,6 +6,7 @@
 #include <QtCore/QMap>
 #include <QtCore/QMutex>
 #include "eagle/core/ServiceDescriptor.h"
+#include "eagle/core/RetryPolicy.h"
 
 namespace Eagle {
 namespace Core {
@@ -16,10 +17,12 @@ public:
     QMap<QString, QObject*> providers; // serviceName+version -> provider
     QMap<QString, CircuitBreaker*> circuitBreakers; // serviceName -> circuitBreaker
     QMap<QString, QPair<int, int>> serviceRateLimits; // serviceName -> (maxRequests, windowMs)
+    QMap<QString, RetryPolicyConfig> retryPolicies;    // serviceName -> retryPolicy
     int defaultTimeoutMs = 5000;  // 默认超时时间
     bool enableCircuitBreaker = true;  // 是否启用熔断器
     bool enablePermissionCheck = false;  // 是否启用权限检查
     bool enableRateLimit = false;  // 是否启用限流
+    bool enableRetry = true;  // 是否启用重试
     mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
 };
 

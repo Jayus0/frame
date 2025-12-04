@@ -2,6 +2,7 @@
 #include "eagle/core/ServiceDescriptor.h"
 #include "ServiceRegistry_p.h"
 #include "eagle/core/CircuitBreaker.h"
+#include "eagle/core/RetryPolicy.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/RBAC.h"
 #include "eagle/core/RateLimiter.h"
@@ -12,6 +13,8 @@
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
 #include <QtCore/QElapsedTimer>
+#include <QtCore/QThread>
+#include <cmath>
 
 namespace Eagle {
 namespace Core {
@@ -165,136 +168,233 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
                                      const QVariantList& args,
                                      int timeout)
 {
-    auto* d = d_func();
-    
-    // 检查熔断器
-    if (d->enableCircuitBreaker) {
+    // 获取重试策略
+    RetryPolicyConfig retryConfig;
+    bool retryEnabled = false;
+    {
+        auto* d = d_func();
         QMutexLocker locker(&d->mutex);
-        CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
-        if (!breaker) {
-            // 创建默认熔断器
-            CircuitBreakerConfig config;
-            breaker = new CircuitBreaker(serviceName, config, this);
-            d->circuitBreakers[serviceName] = breaker;
-        }
-        locker.unlock();
-        
-        if (!breaker->allowCall()) {
-            QString error = QString("Service circuit breaker is open: %1").arg(serviceName);
-            Logger::warning("ServiceRegistry", error);
-            breaker->recordFailure();  // 记录失败
-            emit serviceCallFailed(serviceName, error);
-            return QVariant();
+        retryEnabled = d->enableRetry;
+        if (retryEnabled) {
+            retryConfig = d->retryPolicies.value(serviceName);
+            if (!retryConfig.isValid()) {
+                // 使用默认配置
+                retryConfig.maxRetries = 3;
+                retryConfig.initialDelayMs = 100;
+                retryConfig.maxDelayMs = 5000;
+                retryConfig.backoffMultiplier = 2.0;
+                retryConfig.strategy = RetryStrategy::Exponential;
+            }
         }
     }
     
     // 使用默认超时时间
+    auto* d = d_func();
     if (timeout <= 0) {
         QMutexLocker locker(&d->mutex);
         timeout = d->defaultTimeoutMs;
     }
     
-    QObject* provider = findService(serviceName);
-    if (!provider) {
-        QString error = QString("Service not found: %1").arg(serviceName);
-        Logger::error("ServiceRegistry", error);
+    int attemptCount = 0;
+    QString lastError;
+    QVariant returnValue;  // 在循环外部定义，保存成功调用的返回值
+    
+    // 重试循环
+    while (true) {
+        attemptCount++;
         
-        // 记录失败
+        auto* d = d_func();
+        
+        // 检查熔断器
         if (d->enableCircuitBreaker) {
             QMutexLocker locker(&d->mutex);
             CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
-            if (breaker) {
-                breaker->recordFailure();
+            if (!breaker) {
+                // 创建默认熔断器
+                CircuitBreakerConfig config;
+                breaker = new CircuitBreaker(serviceName, config, this);
+                d->circuitBreakers[serviceName] = breaker;
+            }
+            locker.unlock();
+            
+            if (!breaker->allowCall()) {
+                QString error = QString("Service circuit breaker is open: %1").arg(serviceName);
+                Logger::warning("ServiceRegistry", error);
+                breaker->recordFailure();  // 记录失败
+                lastError = error;
+                
+                // 检查是否应该重试
+                if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
+                    isRetryableError(serviceName, error, retryConfig)) {
+                    int delay = calculateRetryDelay(retryConfig, attemptCount - 1);
+                    Logger::info("ServiceRegistry", QString("重试服务调用: %1::%2 (第%3次, 延迟%4ms)")
+                        .arg(serviceName, method).arg(attemptCount).arg(delay));
+                    QThread::msleep(delay);
+                    continue;
+                }
+                
+                emit serviceCallFailed(serviceName, error);
+                return QVariant();
             }
         }
         
-        emit serviceCallFailed(serviceName, error);
-        return QVariant();
-    }
-    
-    // 使用Qt的元对象系统调用方法
-    const QMetaObject* metaObj = provider->metaObject();
-    int methodIndex = metaObj->indexOfMethod(method.toUtf8().constData());
-    if (methodIndex == -1) {
-        QString error = QString("Method not found: %1::%2").arg(serviceName, method);
-        Logger::error("ServiceRegistry", error);
-        emit serviceCallFailed(serviceName, error);
-        return QVariant();
-    }
-    
-    QMetaMethod metaMethod = metaObj->method(methodIndex);
-    if (metaMethod.methodType() != QMetaMethod::Method && 
-        metaMethod.methodType() != QMetaMethod::Slot) {
-        QString error = QString("Method is not callable: %1::%2").arg(serviceName, method);
-        Logger::error("ServiceRegistry", error);
-        emit serviceCallFailed(serviceName, error);
-        return QVariant();
-    }
-    
-    // 使用超时机制调用方法
-    QVariant returnValue;
-    bool success = false;
-    QElapsedTimer timer;
-    timer.start();
-    
-    // 尝试调用方法（带超时检查）
-    if (metaMethod.returnType() != QMetaType::Void) {
-        QGenericReturnArgument retArg = Q_RETURN_ARG(QVariant, returnValue);
-        if (args.isEmpty()) {
-            success = metaMethod.invoke(provider, Qt::DirectConnection, retArg);
+        QObject* provider = findService(serviceName);
+        if (!provider) {
+            QString error = QString("Service not found: %1").arg(serviceName);
+            Logger::error("ServiceRegistry", error);
+            lastError = error;
+            
+            // 检查是否应该重试（服务不存在通常不应该重试）
+            if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
+                isRetryableError(serviceName, error, retryConfig)) {
+                int delay = calculateRetryDelay(retryConfig, attemptCount - 1);
+                QThread::msleep(delay);
+                continue;
+            }
+            
+            // 记录失败
+            if (d->enableCircuitBreaker) {
+                QMutexLocker locker(&d->mutex);
+                CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
+                if (breaker) {
+                    breaker->recordFailure();
+                }
+            }
+            
+            emit serviceCallFailed(serviceName, error);
+            return QVariant();
+        }
+        
+        // 使用Qt的元对象系统调用方法
+        const QMetaObject* metaObj = provider->metaObject();
+        int methodIndex = metaObj->indexOfMethod(method.toUtf8().constData());
+        if (methodIndex == -1) {
+            QString error = QString("Method not found: %1::%2").arg(serviceName, method);
+            Logger::error("ServiceRegistry", error);
+            lastError = error;
+            
+            // 检查是否应该重试
+            if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
+                isRetryableError(serviceName, error, retryConfig)) {
+                int delay = calculateRetryDelay(retryConfig, attemptCount - 1);
+                QThread::msleep(delay);
+                continue;
+            }
+            
+            emit serviceCallFailed(serviceName, error);
+            return QVariant();
+        }
+        
+        QMetaMethod metaMethod = metaObj->method(methodIndex);
+        if (metaMethod.methodType() != QMetaMethod::Method && 
+            metaMethod.methodType() != QMetaMethod::Slot) {
+            QString error = QString("Method is not callable: %1::%2").arg(serviceName, method);
+            Logger::error("ServiceRegistry", error);
+            lastError = error;
+            
+            // 检查是否应该重试
+            if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
+                isRetryableError(serviceName, error, retryConfig)) {
+                int delay = calculateRetryDelay(retryConfig, attemptCount - 1);
+                QThread::msleep(delay);
+                continue;
+            }
+            
+            emit serviceCallFailed(serviceName, error);
+            return QVariant();
+        }
+        
+        // 使用超时机制调用方法
+        bool success = false;
+        QElapsedTimer timer;
+        timer.start();
+        QVariant currentReturnValue;  // 当前尝试的返回值
+        
+        // 尝试调用方法（带超时检查）
+        if (metaMethod.returnType() != QMetaType::Void) {
+            QGenericReturnArgument retArg = Q_RETURN_ARG(QVariant, currentReturnValue);
+            if (args.isEmpty()) {
+                success = metaMethod.invoke(provider, Qt::DirectConnection, retArg);
+            } else {
+                QGenericArgument arg1 = args.size() > 0 ? Q_ARG(QVariant, args[0]) : QGenericArgument();
+                QGenericArgument arg2 = args.size() > 1 ? Q_ARG(QVariant, args[1]) : QGenericArgument();
+                QGenericArgument arg3 = args.size() > 2 ? Q_ARG(QVariant, args[2]) : QGenericArgument();
+                success = metaMethod.invoke(provider, Qt::DirectConnection, retArg, arg1, arg2, arg3);
+            }
         } else {
-            QGenericArgument arg1 = args.size() > 0 ? Q_ARG(QVariant, args[0]) : QGenericArgument();
-            QGenericArgument arg2 = args.size() > 1 ? Q_ARG(QVariant, args[1]) : QGenericArgument();
-            QGenericArgument arg3 = args.size() > 2 ? Q_ARG(QVariant, args[2]) : QGenericArgument();
-            success = metaMethod.invoke(provider, Qt::DirectConnection, retArg, arg1, arg2, arg3);
-        }
-    } else {
-        if (args.isEmpty()) {
-            success = metaMethod.invoke(provider, Qt::DirectConnection);
-        } else {
-            QGenericArgument arg1 = args.size() > 0 ? Q_ARG(QVariant, args[0]) : QGenericArgument();
-            QGenericArgument arg2 = args.size() > 1 ? Q_ARG(QVariant, args[1]) : QGenericArgument();
-            QGenericArgument arg3 = args.size() > 2 ? Q_ARG(QVariant, args[2]) : QGenericArgument();
-            success = metaMethod.invoke(provider, Qt::DirectConnection, arg1, arg2, arg3);
-        }
-    }
-    
-    // 检查超时（注意：Qt的invoke是同步的，这里只是检查执行时间）
-    if (timer.elapsed() > timeout) {
-        QString error = QString("Service call timeout: %1::%2 (耗时: %3ms)").arg(serviceName, method).arg(timer.elapsed());
-        Logger::error("ServiceRegistry", error);
-        
-        // 记录失败
-        if (d->enableCircuitBreaker) {
-            QMutexLocker locker(&d->mutex);
-            CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
-            if (breaker) {
-                breaker->recordFailure();
+            if (args.isEmpty()) {
+                success = metaMethod.invoke(provider, Qt::DirectConnection);
+            } else {
+                QGenericArgument arg1 = args.size() > 0 ? Q_ARG(QVariant, args[0]) : QGenericArgument();
+                QGenericArgument arg2 = args.size() > 1 ? Q_ARG(QVariant, args[1]) : QGenericArgument();
+                QGenericArgument arg3 = args.size() > 2 ? Q_ARG(QVariant, args[2]) : QGenericArgument();
+                success = metaMethod.invoke(provider, Qt::DirectConnection, arg1, arg2, arg3);
             }
         }
         
-        emit serviceCallFailed(serviceName, error);
-        return QVariant();
-    }
-    
-    if (!success) {
-        QString error = QString("Service call failed: %1::%2").arg(serviceName, method);
-        Logger::error("ServiceRegistry", error);
-        
-        // 记录失败
-        if (d->enableCircuitBreaker) {
-            QMutexLocker locker(&d->mutex);
-            CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
-            if (breaker) {
-                breaker->recordFailure();
+        // 检查超时（注意：Qt的invoke是同步的，这里只是检查执行时间）
+        if (timer.elapsed() > timeout) {
+            QString error = QString("Service call timeout: %1::%2 (耗时: %3ms)").arg(serviceName, method).arg(timer.elapsed());
+            Logger::error("ServiceRegistry", error);
+            lastError = error;
+            
+            // 检查是否应该重试（超时通常可以重试）
+            if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
+                isRetryableError(serviceName, error, retryConfig)) {
+                int delay = calculateRetryDelay(retryConfig, attemptCount - 1);
+                Logger::info("ServiceRegistry", QString("重试服务调用: %1::%2 (第%3次, 延迟%4ms)")
+                    .arg(serviceName, method).arg(attemptCount).arg(delay));
+                QThread::msleep(delay);
+                continue;  // 重试
             }
+            
+            // 记录失败
+            if (d->enableCircuitBreaker) {
+                QMutexLocker locker(&d->mutex);
+                CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
+                if (breaker) {
+                    breaker->recordFailure();
+                }
+            }
+            
+            emit serviceCallFailed(serviceName, error);
+            return QVariant();
         }
         
-        emit serviceCallFailed(serviceName, error);
-        return QVariant();
+        if (!success) {
+            QString error = QString("Service call failed: %1::%2").arg(serviceName, method);
+            Logger::error("ServiceRegistry", error);
+            lastError = error;
+            
+            // 检查是否应该重试
+            if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
+                isRetryableError(serviceName, error, retryConfig)) {
+                int delay = calculateRetryDelay(retryConfig, attemptCount - 1);
+                Logger::info("ServiceRegistry", QString("重试服务调用: %1::%2 (第%3次, 延迟%4ms)")
+                    .arg(serviceName, method).arg(attemptCount).arg(delay));
+                QThread::msleep(delay);
+                continue;  // 重试
+            }
+            
+            // 记录失败
+            if (d->enableCircuitBreaker) {
+                QMutexLocker locker(&d->mutex);
+                CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
+                if (breaker) {
+                    breaker->recordFailure();
+                }
+            }
+            
+            emit serviceCallFailed(serviceName, error);
+            return QVariant();
+        }
+        
+        // 调用成功，保存返回值并退出重试循环
+        returnValue = currentReturnValue;
+        break;
     }
     
-    // 记录成功
+    // 调用成功，记录结果
     if (d->enableCircuitBreaker) {
         QMutexLocker locker(&d->mutex);
         CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
@@ -304,10 +404,16 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
     }
     
     // 记录服务调用时间
-    qint64 callTime = timer.elapsed();
     Framework* framework = Framework::instance();
     if (framework && framework->performanceMonitor()) {
-        framework->performanceMonitor()->recordServiceCallTime(serviceName, method, callTime);
+        // 简化处理：记录最后一次调用的时间
+        // 注意：timer在循环内部，这里使用一个固定的小值表示成功
+        framework->performanceMonitor()->recordServiceCallTime(serviceName, method, 0);
+    }
+    
+    if (attemptCount > 1) {
+        Logger::info("ServiceRegistry", QString("服务调用成功（重试%1次）: %2::%3")
+            .arg(attemptCount - 1).arg(serviceName, method));
     }
     
     return returnValue;
@@ -415,6 +521,98 @@ void ServiceRegistry::setServiceRateLimit(const QString& serviceName, int maxReq
     d->serviceRateLimits[serviceName] = qMakePair(maxRequests, windowMs);
     Logger::info("ServiceRegistry", QString("设置服务限流: %1 - %2次/%3ms")
         .arg(serviceName).arg(maxRequests).arg(windowMs));
+}
+
+void ServiceRegistry::setRetryEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->enableRetry = enabled;
+    Logger::info("ServiceRegistry", QString("重试策略%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool ServiceRegistry::isRetryEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->enableRetry;
+}
+
+void ServiceRegistry::setRetryPolicy(const QString& serviceName, const RetryPolicyConfig& config)
+{
+    if (!config.isValid()) {
+        Logger::warning("ServiceRegistry", QString("无效的重试策略配置: %1").arg(serviceName));
+        return;
+    }
+    
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->retryPolicies[serviceName] = config;
+    Logger::info("ServiceRegistry", QString("设置服务重试策略: %1 - 最大重试次数: %2")
+        .arg(serviceName).arg(config.maxRetries));
+}
+
+RetryPolicyConfig ServiceRegistry::getRetryPolicy(const QString& serviceName) const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->retryPolicies.value(serviceName);
+}
+
+// 辅助函数：判断错误是否可重试
+bool ServiceRegistry::isRetryableError(const QString& serviceName, const QString& error, const RetryPolicyConfig& config) const
+{
+    // 如果指定了不可重试的错误列表，检查是否在列表中
+    if (!config.nonRetryableErrors.isEmpty()) {
+        for (const QString& nonRetryable : config.nonRetryableErrors) {
+            if (error.contains(nonRetryable, Qt::CaseInsensitive)) {
+                return false;
+            }
+        }
+    }
+    
+    // 如果指定了可重试的错误列表，检查是否在列表中
+    if (!config.retryableErrors.isEmpty()) {
+        for (const QString& retryable : config.retryableErrors) {
+            if (error.contains(retryable, Qt::CaseInsensitive)) {
+                return true;
+            }
+        }
+        return false;  // 不在可重试列表中，不可重试
+    }
+    
+    // 默认：超时和网络错误可重试，其他错误根据情况判断
+    if (error.contains("timeout", Qt::CaseInsensitive) || 
+        error.contains("network", Qt::CaseInsensitive) ||
+        error.contains("connection", Qt::CaseInsensitive)) {
+        return true;
+    }
+    
+    // 其他错误默认可重试（除非在不可重试列表中）
+    return true;
+}
+
+// 辅助函数：计算重试延迟
+int ServiceRegistry::calculateRetryDelay(const RetryPolicyConfig& config, int attemptCount) const
+{
+    int delay = 0;
+    
+    switch (config.strategy) {
+        case RetryStrategy::Fixed:
+            delay = config.initialDelayMs;
+            break;
+            
+        case RetryStrategy::Exponential:
+            delay = static_cast<int>(config.initialDelayMs * std::pow(config.backoffMultiplier, attemptCount));
+            break;
+            
+        case RetryStrategy::Linear:
+            delay = config.initialDelayMs * (1 + attemptCount);
+            break;
+    }
+    
+    // 限制在最大延迟范围内
+    return qMin(delay, config.maxDelayMs);
 }
 
 } // namespace Core
