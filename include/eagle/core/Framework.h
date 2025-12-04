@@ -15,6 +15,7 @@
 #include "SessionManager.h"
 #include "ApiServer.h"
 #include "BackupManager.h"
+#include "HotReloadManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -49,6 +50,7 @@ public:
     SessionManager* sessionManager() const;
     ApiServer* apiServer() const;
     BackupManager* backupManager() const;
+    HotReloadManager* hotReloadManager() const;
     
     // 框架信息
     QString version() const;

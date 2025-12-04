@@ -16,6 +16,7 @@
 #include "eagle/core/BackupManager.h"
 #include "eagle/core/TestRunner.h"
 #include "eagle/core/TestCaseBase.h"
+#include "eagle/core/HotReloadManager.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -52,6 +53,9 @@ public:
         QCommandLineOption testOption("test", "Run tests");
         parser.addOption(testOption);
         
+        QCommandLineOption hotreloadOption("hotreload", "Hot reload plugins");
+        parser.addOption(hotreloadOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -69,6 +73,8 @@ public:
             return handleBackup(args.mid(1));
         } else if (parser.isSet(testOption) || command == "test") {
             return handleTest(args.mid(1));
+        } else if (parser.isSet(hotreloadOption) || command == "hotreload") {
+            return handleHotReload(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -629,6 +635,77 @@ private:
         } else {
             std::cerr << "Unknown test command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli test run' or 'eagle-cli test create'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleHotReload(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli hotreload <reload|list> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::HotReloadManager* hotReloadManager = framework->hotReloadManager();
+        if (!hotReloadManager) {
+            std::cerr << "Error: HotReloadManager not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "reload") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli hotreload reload <plugin-id> [--force]" << std::endl;
+                return 1;
+            }
+            
+            QString pluginId = args[1];
+            bool force = args.contains("--force");
+            
+            Eagle::Core::HotReloadResult result = hotReloadManager->reloadPlugin(pluginId, force);
+            
+            if (result.success) {
+                std::cout << "Plugin reloaded successfully: " << pluginId.toStdString() << std::endl;
+                std::cout << "Duration: " << result.durationMs << "ms" << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: Failed to reload plugin: " << pluginId.toStdString() << std::endl;
+                std::cerr << "Error message: " << result.errorMessage.toStdString() << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "list") {
+            QStringList reloadablePlugins = hotReloadManager->getReloadablePlugins();
+            std::cout << "Reloadable plugins (" << reloadablePlugins.size() << "):" << std::endl;
+            for (const QString& pluginId : reloadablePlugins) {
+                Eagle::Core::HotReloadStatus status = hotReloadManager->getStatus(pluginId);
+                QString statusStr;
+                switch (status) {
+                    case Eagle::Core::HotReloadStatus::Idle:
+                        statusStr = "Idle";
+                        break;
+                    case Eagle::Core::HotReloadStatus::Success:
+                        statusStr = "Success";
+                        break;
+                    case Eagle::Core::HotReloadStatus::Failed:
+                        statusStr = "Failed";
+                        break;
+                    default:
+                        statusStr = "In Progress";
+                        break;
+                }
+                std::cout << "  " << pluginId.toStdString() << " [" << statusStr.toStdString() << "]" << std::endl;
+            }
+            return 0;
+        } else {
+            std::cerr << "Unknown hotreload command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli hotreload reload' or 'eagle-cli hotreload list'" << std::endl;
             return 1;
         }
     }

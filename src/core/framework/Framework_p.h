@@ -14,6 +14,7 @@
 #include "eagle/core/SessionManager.h"
 #include "eagle/core/ApiServer.h"
 #include "eagle/core/BackupManager.h"
+#include "eagle/core/HotReloadManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -33,6 +34,7 @@ public:
     SessionManager* sessionManager;
     ApiServer* apiServer;
     BackupManager* backupManager;
+    HotReloadManager* hotReloadManager;
     bool initialized;
     
     Private() 
@@ -49,6 +51,7 @@ public:
         , sessionManager(nullptr)
         , apiServer(nullptr)
         , backupManager(nullptr)
+        , hotReloadManager(nullptr)
         , initialized(false)
     {
     }

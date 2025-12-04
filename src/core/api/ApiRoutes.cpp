@@ -12,6 +12,7 @@
 #include "eagle/core/Logger.h"
 #include "eagle/core/IPlugin.h"
 #include "eagle/core/BackupManager.h"
+#include "eagle/core/HotReloadManager.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -698,6 +699,86 @@ void registerApiRoutes(ApiServer* server) {
         if (auditLog) {
             auditLog->log(userId, "DELETE /api/v1/backups/{id}", backupId, AuditLevel::Info, success);
         }
+    });
+    
+    // ============================================================================
+    // 热重载管理API
+    // ============================================================================
+    
+    // POST /api/v1/plugins/{id}/reload - 热重载插件
+    server->post("/api/v1/plugins/{id}/reload", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.reload")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.reload");
+            return;
+        }
+        
+        HotReloadManager* hotReloadManager = framework->hotReloadManager();
+        if (!hotReloadManager) {
+            resp.setError(500, "HotReloadManager not available");
+            return;
+        }
+        
+        QString pluginId = req.pathParams.value("id");
+        if (pluginId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing plugin ID");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        bool force = body.value("force").toBool(false);
+        
+        HotReloadResult result = hotReloadManager->reloadPlugin(pluginId, force);
+        
+        if (result.success) {
+            QJsonObject data;
+            data["pluginId"] = pluginId;
+            data["status"] = "reloaded";
+            data["durationMs"] = result.durationMs;
+            resp.setSuccess(data);
+        } else {
+            resp.setError(500, "Failed to reload plugin", result.errorMessage);
+        }
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/plugins/{id}/reload", pluginId,
+                         result.success ? AuditLevel::Info : AuditLevel::Warning, result.success);
+        }
+    });
+    
+    // GET /api/v1/plugins/reloadable - 获取可重载插件列表
+    server->get("/api/v1/plugins/reloadable", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.reload")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.reload");
+            return;
+        }
+        
+        HotReloadManager* hotReloadManager = framework->hotReloadManager();
+        if (!hotReloadManager) {
+            resp.setError(500, "HotReloadManager not available");
+            return;
+        }
+        
+        QStringList reloadablePlugins = hotReloadManager->getReloadablePlugins();
+        QJsonArray pluginArray;
+        for (const QString& pluginId : reloadablePlugins) {
+            pluginArray.append(pluginId);
+        }
+        
+        QJsonObject data;
+        data["plugins"] = pluginArray;
+        data["count"] = pluginArray.size();
+        resp.setSuccess(data);
     });
 }
 

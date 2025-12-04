@@ -1,35 +1,86 @@
-set(SOURCES
-    PluginManager.cpp
-    ServiceRegistry.cpp
-    EventBus.cpp
-    ConfigManager.cpp
-    Logger.cpp
-    Framework.cpp
-    PluginSignature.cpp
-    CircuitBreaker.cpp
-    ConfigEncryption.cpp
-    PluginIsolation.cpp
-    RBAC.cpp
-    AuditLog.cpp
-    PerformanceMonitor.cpp
-    AlertSystem.cpp
-    RateLimiter.cpp
-    ApiKeyManager.cpp
-    SessionManager.cpp
-    ApiServer.cpp
-    ApiRoutes.cpp
-    RetryPolicy.cpp
-    DegradationPolicy.cpp
-    NotificationChannel.cpp
-    EmailChannel.cpp
-    WebhookChannel.cpp
-    BackupManager.cpp
-    TestCaseBase.cpp
-    TestRunner.cpp
+# 插件管理模块
+set(PLUGIN_SOURCES
+    plugin/PluginManager.cpp
+    plugin/PluginSignature.cpp
+    plugin/PluginIsolation.cpp
 )
 
-# 使用相对路径（相对于src/core目录），这样Qt Creator会显示相对路径而不是绝对路径
-# src/core -> ../../include 表示从src/core目录向上两级到项目根目录，然后进入include目录
+# 服务模块
+set(SERVICE_SOURCES
+    service/ServiceRegistry.cpp
+    service/CircuitBreaker.cpp
+    service/RetryPolicy.cpp
+    service/DegradationPolicy.cpp
+)
+
+# 配置模块
+set(CONFIG_SOURCES
+    config/ConfigManager.cpp
+    config/ConfigEncryption.cpp
+    config/BackupManager.cpp
+)
+
+# 安全模块
+set(SECURITY_SOURCES
+    security/RBAC.cpp
+    security/AuditLog.cpp
+    security/ApiKeyManager.cpp
+    security/SessionManager.cpp
+    security/RateLimiter.cpp
+)
+
+# 监控模块
+set(MONITORING_SOURCES
+    monitoring/PerformanceMonitor.cpp
+    monitoring/AlertSystem.cpp
+    monitoring/NotificationChannel.cpp
+    monitoring/EmailChannel.cpp
+    monitoring/WebhookChannel.cpp
+)
+
+# API模块
+set(API_SOURCES
+    api/ApiServer.cpp
+    api/ApiRoutes.cpp
+)
+
+# 事件模块
+set(EVENT_SOURCES
+    event/EventBus.cpp
+)
+
+# 测试模块
+set(TEST_SOURCES
+    test/TestCaseBase.cpp
+    test/TestRunner.cpp
+)
+
+# 框架模块
+set(FRAMEWORK_SOURCES
+    framework/Framework.cpp
+    framework/Logger.cpp
+)
+
+# 热重载模块
+set(HOTRELOAD_SOURCES
+    hotreload/HotReloadManager.cpp
+)
+
+# 合并所有源文件
+set(SOURCES
+    ${PLUGIN_SOURCES}
+    ${SERVICE_SOURCES}
+    ${CONFIG_SOURCES}
+    ${SECURITY_SOURCES}
+    ${MONITORING_SOURCES}
+    ${API_SOURCES}
+    ${EVENT_SOURCES}
+    ${TEST_SOURCES}
+    ${FRAMEWORK_SOURCES}
+    ${HOTRELOAD_SOURCES}
+)
+
+# 头文件
 set(HEADERS
     ../../include/eagle/core/IPlugin.h
     ../../include/eagle/core/PluginManager.h
@@ -60,6 +111,7 @@ set(HEADERS
     ../../include/eagle/core/BackupManager.h
     ../../include/eagle/core/TestCaseBase.h
     ../../include/eagle/core/TestRunner.h
+    ../../include/eagle/core/HotReloadManager.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})
