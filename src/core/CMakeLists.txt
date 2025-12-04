@@ -19,6 +19,7 @@ set(SOURCES
     ApiServer.cpp
     ApiRoutes.cpp
     RetryPolicy.cpp
+    DegradationPolicy.cpp
 )
 
 # 使用相对路径（相对于src/core目录），这样Qt Creator会显示相对路径而不是绝对路径
@@ -46,6 +47,7 @@ set(HEADERS
     ../../include/eagle/core/ApiServer.h
     ../../include/eagle/core/ApiRoutes.h
     ../../include/eagle/core/RetryPolicy.h
+    ../../include/eagle/core/DegradationPolicy.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})

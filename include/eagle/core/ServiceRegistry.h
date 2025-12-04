@@ -10,6 +10,7 @@
 #include "ServiceDescriptor.h"
 #include "CircuitBreaker.h"
 #include "RetryPolicy.h"
+#include "DegradationPolicy.h"
 
 namespace Eagle {
 namespace Core {
@@ -65,6 +66,12 @@ public:
     void setRetryPolicy(const QString& serviceName, const RetryPolicyConfig& config);
     RetryPolicyConfig getRetryPolicy(const QString& serviceName) const;
     
+    // 降级策略配置
+    void setDegradationEnabled(bool enabled);
+    bool isDegradationEnabled() const;
+    void setDegradationPolicy(const QString& serviceName, const DegradationPolicyConfig& config);
+    DegradationPolicyConfig getDegradationPolicy(const QString& serviceName) const;
+    
     // 健康检查
     bool checkServiceHealth(const QString& serviceName) const;
     
@@ -72,6 +79,10 @@ private:
     // 重试辅助函数
     bool isRetryableError(const QString& serviceName, const QString& error, const RetryPolicyConfig& config) const;
     int calculateRetryDelay(const RetryPolicyConfig& config, int attemptCount) const;
+    
+    // 降级辅助函数
+    QVariant tryDegrade(const QString& serviceName, const QString& method, 
+                       const QVariantList& args, DegradationTrigger trigger) const;
     
 public:
 signals:

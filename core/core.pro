@@ -27,7 +27,8 @@ SOURCES += \
     ../src/core/SessionManager.cpp \
     ../src/core/ApiServer.cpp \
     ../src/core/ApiRoutes.cpp \
-    ../src/core/RetryPolicy.cpp
+    ../src/core/RetryPolicy.cpp \
+    ../src/core/DegradationPolicy.cpp
 
 # 头文件
 HEADERS += \
@@ -66,7 +67,9 @@ HEADERS += \
     ../src/core/ApiServer_p.h \
     ../include/eagle/core/ApiRoutes.h \
     ../include/eagle/core/RetryPolicy.h \
-    ../src/core/RetryPolicy_p.h
+    ../src/core/RetryPolicy_p.h \
+    ../include/eagle/core/DegradationPolicy.h \
+    ../src/core/DegradationPolicy_p.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

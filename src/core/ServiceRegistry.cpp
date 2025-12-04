@@ -3,6 +3,7 @@
 #include "ServiceRegistry_p.h"
 #include "eagle/core/CircuitBreaker.h"
 #include "eagle/core/RetryPolicy.h"
+#include "eagle/core/DegradationPolicy.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/RBAC.h"
 #include "eagle/core/RateLimiter.h"
@@ -233,6 +234,13 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
                     continue;
                 }
                 
+                // 检查是否需要降级
+                QVariant degradedResult = tryDegrade(serviceName, method, args, DegradationTrigger::CircuitBreakerOpen);
+                if (degradedResult.isValid()) {
+                    Logger::info("ServiceRegistry", QString("服务降级成功: %1::%2").arg(serviceName, method));
+                    return degradedResult;
+                }
+                
                 emit serviceCallFailed(serviceName, error);
                 return QVariant();
             }
@@ -357,6 +365,13 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
                 }
             }
             
+            // 检查是否需要降级
+            QVariant degradedResult = tryDegrade(serviceName, method, args, DegradationTrigger::Timeout);
+            if (degradedResult.isValid()) {
+                Logger::info("ServiceRegistry", QString("服务降级成功（超时）: %1::%2").arg(serviceName, method));
+                return degradedResult;
+            }
+            
             emit serviceCallFailed(serviceName, error);
             return QVariant();
         }
@@ -382,6 +397,15 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
                 CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
                 if (breaker) {
                     breaker->recordFailure();
+                }
+            }
+            
+            // 检查是否需要降级（重试失败后）
+            if (attemptCount > retryConfig.maxRetries) {
+                QVariant degradedResult = tryDegrade(serviceName, method, args, DegradationTrigger::ErrorRate);
+                if (degradedResult.isValid()) {
+                    Logger::info("ServiceRegistry", QString("服务降级成功（重试失败）: %1::%2").arg(serviceName, method));
+                    return degradedResult;
                 }
             }
             
@@ -613,6 +637,116 @@ int ServiceRegistry::calculateRetryDelay(const RetryPolicyConfig& config, int at
     
     // 限制在最大延迟范围内
     return qMin(delay, config.maxDelayMs);
+}
+
+// 辅助函数：尝试降级
+QVariant ServiceRegistry::tryDegrade(const QString& serviceName, const QString& method,
+                                     const QVariantList& args, DegradationTrigger trigger) const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    if (!d->enableDegradation) {
+        return QVariant();
+    }
+    
+    DegradationPolicyConfig policy = d->degradationPolicies.value(serviceName);
+    if (!policy.enabled) {
+        return QVariant();
+    }
+    
+    // 检查触发条件
+    if (policy.trigger != trigger && policy.trigger != DegradationTrigger::Always) {
+        return QVariant();
+    }
+    
+    // 执行降级策略
+    switch (policy.strategy) {
+        case DegradationStrategy::FallbackService: {
+            // 使用备用服务
+            QString fallbackService = policy.fallbackServiceName;
+            QString fallbackMethod = policy.fallbackMethod.isEmpty() ? method : policy.fallbackMethod;
+            
+            Logger::info("ServiceRegistry", QString("降级到备用服务: %1::%2")
+                .arg(fallbackService, fallbackMethod));
+            
+            // 递归调用备用服务（注意：避免无限递归）
+            if (fallbackService != serviceName) {
+                locker.unlock();  // 释放锁，避免死锁
+                return callService(fallbackService, fallbackMethod, args, d->defaultTimeoutMs);
+            }
+            break;
+        }
+        
+        case DegradationStrategy::DefaultValue: {
+            // 返回默认值
+            Logger::info("ServiceRegistry", QString("返回默认值: %1::%2")
+                .arg(serviceName, method));
+            return policy.defaultValue;
+        }
+        
+        case DegradationStrategy::SimplifiedService: {
+            // 使用简化服务
+            QString simplifiedService = policy.simplifiedServiceName;
+            QString simplifiedMethod = policy.fallbackMethod.isEmpty() ? method : policy.fallbackMethod;
+            
+            Logger::info("ServiceRegistry", QString("降级到简化服务: %1::%2")
+                .arg(simplifiedService, simplifiedMethod));
+            
+            if (simplifiedService != serviceName) {
+                locker.unlock();  // 释放锁，避免死锁
+                return callService(simplifiedService, simplifiedMethod, args, d->defaultTimeoutMs);
+            }
+            break;
+        }
+        
+        case DegradationStrategy::Disabled: {
+            // 禁用服务，返回空值
+            Logger::warning("ServiceRegistry", QString("服务已禁用: %1::%2")
+                .arg(serviceName, method));
+            return QVariant();
+        }
+    }
+    
+    return QVariant();
+}
+
+void ServiceRegistry::setDegradationEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->enableDegradation = enabled;
+    Logger::info("ServiceRegistry", QString("降级策略%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool ServiceRegistry::isDegradationEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->enableDegradation;
+}
+
+void ServiceRegistry::setDegradationPolicy(const QString& serviceName, const DegradationPolicyConfig& config)
+{
+    if (!config.isValid()) {
+        Logger::warning("ServiceRegistry", QString("无效的降级策略配置: %1").arg(serviceName));
+        return;
+    }
+    
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->degradationPolicies[serviceName] = config;
+    Logger::info("ServiceRegistry", QString("设置服务降级策略: %1 - 触发条件: %2, 策略: %3")
+        .arg(serviceName)
+        .arg(static_cast<int>(config.trigger))
+        .arg(static_cast<int>(config.strategy)));
+}
+
+DegradationPolicyConfig ServiceRegistry::getDegradationPolicy(const QString& serviceName) const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->degradationPolicies.value(serviceName);
 }
 
 } // namespace Core
