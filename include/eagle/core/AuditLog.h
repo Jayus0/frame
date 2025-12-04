@@ -21,6 +21,17 @@ enum class AuditLevel {
 };
 
 /**
+ * @brief 日志轮转策略
+ */
+enum class RotationStrategy {
+    None,      // 不轮转
+    Size,      // 按大小轮转
+    Daily,     // 按天轮转
+    Weekly,    // 按周轮转
+    Monthly    // 按月轮转
+};
+
+/**
  * @brief 审计日志条目
  */
 struct AuditLogEntry {
@@ -75,6 +86,17 @@ public:
     void setAutoFlush(bool autoFlush);
     void flush();
     
+    // 日志轮转配置
+    void setRotationEnabled(bool enabled);
+    bool isRotationEnabled() const;
+    void setRotationStrategy(RotationStrategy strategy);
+    RotationStrategy getRotationStrategy() const;
+    void setMaxFileSize(qint64 maxSizeBytes);  // 按大小轮转的最大文件大小
+    qint64 getMaxFileSize() const;
+    void setMaxFiles(int maxFiles);  // 保留的最大文件数
+    int getMaxFiles() const;
+    void rotateNow();  // 立即执行轮转
+    
     // 统计
     int getEntryCount() const;
     int getEntryCount(const QString& userId) const;
@@ -98,5 +120,6 @@ private:
 
 Q_DECLARE_METATYPE(Eagle::Core::AuditLogEntry)
 Q_DECLARE_METATYPE(Eagle::Core::AuditLevel)
+Q_DECLARE_METATYPE(Eagle::Core::RotationStrategy)
 
 #endif // EAGLE_CORE_AUDITLOG_H

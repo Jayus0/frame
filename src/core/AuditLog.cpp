@@ -8,6 +8,9 @@
 #include <QtCore/QMutexLocker>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QDateTime>
+#include <algorithm>
 
 namespace Eagle {
 namespace Core {
@@ -16,6 +19,11 @@ void AuditLogManager::Private::writeToFile(const AuditLogEntry& entry)
 {
     if (logFilePath.isEmpty()) {
         return;
+    }
+    
+    // 检查是否需要轮转
+    if (rotationEnabled && shouldRotate()) {
+        performRotation();
     }
     
     QFile file(logFilePath);
@@ -49,6 +57,167 @@ void AuditLogManager::Private::writeToFile(const AuditLogEntry& entry)
     file.close();
 }
 
+bool AuditLogManager::Private::shouldRotate() const
+{
+    if (!rotationEnabled || rotationStrategy == RotationStrategy::None) {
+        return false;
+    }
+    
+    // 按大小轮转
+    if (rotationStrategy == RotationStrategy::Size) {
+        QFileInfo fileInfo(logFilePath);
+        if (fileInfo.exists() && fileInfo.size() >= maxFileSizeBytes) {
+            return true;
+        }
+    }
+    
+    // 按时间轮转
+    QDateTime currentRotationDate = getCurrentRotationDate();
+    if (!lastRotationDate.isValid() || currentRotationDate > lastRotationDate) {
+        return true;
+    }
+    
+    return false;
+}
+
+void AuditLogManager::Private::performRotation()
+{
+    if (logFilePath.isEmpty()) {
+        return;
+    }
+    
+    QFileInfo currentFile(logFilePath);
+    if (!currentFile.exists()) {
+        // 文件不存在，不需要轮转
+        return;
+    }
+    
+    // 生成新的日志文件名（带时间戳）
+    QDateTime now = QDateTime::currentDateTime();
+    QString timestamp;
+    switch (rotationStrategy) {
+        case RotationStrategy::Size:
+            timestamp = now.toString("yyyyMMdd_HHmmss");
+            break;
+        case RotationStrategy::Daily:
+            timestamp = now.toString("yyyyMMdd");
+            break;
+        case RotationStrategy::Weekly:
+            // 使用周的开始日期（周一）
+            {
+                int daysToMonday = (now.date().dayOfWeek() + 5) % 7;
+                QDate weekStart = now.date().addDays(-daysToMonday);
+                timestamp = weekStart.toString("yyyyMMdd");
+            }
+            break;
+        case RotationStrategy::Monthly:
+            timestamp = now.toString("yyyyMM");
+            break;
+        default:
+            timestamp = now.toString("yyyyMMdd");
+            break;
+    }
+    
+    QString rotatedFileName = logFileBaseName + "_" + timestamp + ".log";
+    QString rotatedFilePath = logDir + "/" + rotatedFileName;
+    
+    // 如果文件已存在，添加序号
+    int counter = 1;
+    while (QFile::exists(rotatedFilePath)) {
+        rotatedFileName = logFileBaseName + "_" + timestamp + "_" + QString::number(counter) + ".log";
+        rotatedFilePath = logDir + "/" + rotatedFileName;
+        counter++;
+    }
+    
+    // 重命名当前文件
+    if (QFile::rename(logFilePath, rotatedFilePath)) {
+        Logger::info("AuditLog", QString("日志文件轮转: %1 -> %2").arg(logFilePath, rotatedFileName));
+    } else {
+        Logger::warning("AuditLog", QString("日志文件轮转失败: %1").arg(logFilePath));
+    }
+    
+    // 更新当前日志文件路径
+    QString newFileName = generateLogFileName(now);
+    logFilePath = logDir + "/" + newFileName;
+    lastRotationDate = getCurrentRotationDate();
+    
+    // 清理旧文件
+    cleanupOldFiles();
+}
+
+void AuditLogManager::Private::cleanupOldFiles()
+{
+    if (maxFiles <= 0) {
+        return;  // 不限制文件数量
+    }
+    
+    QDir dir(logDir);
+    if (!dir.exists()) {
+        return;
+    }
+    
+    // 获取所有日志文件
+    QStringList filters;
+    filters << logFileBaseName + "_*.log";
+    QFileInfoList files = dir.entryInfoList(filters, QDir::Files, QDir::Time | QDir::Reversed);
+    
+    // 如果文件数超过限制，删除最旧的
+    if (files.size() > maxFiles) {
+        int toDelete = files.size() - maxFiles;
+        for (int i = 0; i < toDelete; ++i) {
+            QFile::remove(files[i].absoluteFilePath());
+            Logger::info("AuditLog", QString("删除旧日志文件: %1").arg(files[i].fileName()));
+        }
+    }
+}
+
+QString AuditLogManager::Private::generateLogFileName(const QDateTime& date) const
+{
+    QString suffix;
+    switch (rotationStrategy) {
+        case RotationStrategy::Daily:
+            suffix = date.toString("yyyyMMdd");
+            break;
+        case RotationStrategy::Weekly:
+            {
+                int daysToMonday = (date.date().dayOfWeek() + 5) % 7;
+                QDate weekStart = date.date().addDays(-daysToMonday);
+                suffix = weekStart.toString("yyyyMMdd");
+            }
+            break;
+        case RotationStrategy::Monthly:
+            suffix = date.toString("yyyyMM");
+            break;
+        default:
+            suffix = date.toString("yyyyMMdd");
+            break;
+    }
+    return logFileBaseName + "_" + suffix + ".log";
+}
+
+QDateTime AuditLogManager::Private::getCurrentRotationDate() const
+{
+    QDateTime now = QDateTime::currentDateTime();
+    
+    switch (rotationStrategy) {
+        case RotationStrategy::Daily:
+            return QDateTime(now.date(), QTime(0, 0, 0));
+        case RotationStrategy::Weekly:
+            {
+                int daysToMonday = (now.date().dayOfWeek() + 5) % 7;
+                QDate weekStart = now.date().addDays(-daysToMonday);
+                return QDateTime(weekStart, QTime(0, 0, 0));
+            }
+        case RotationStrategy::Monthly:
+            {
+                QDate monthStart(now.date().year(), now.date().month(), 1);
+                return QDateTime(monthStart, QTime(0, 0, 0));
+            }
+        default:
+            return now;
+    }
+}
+
 AuditLogManager::AuditLogManager(QObject* parent)
     : QObject(parent)
     , d(new AuditLogManager::Private)
@@ -59,7 +228,12 @@ AuditLogManager::AuditLogManager(QObject* parent)
     if (!dir.exists(logDir)) {
         dir.mkpath(logDir);
     }
-    d->logFilePath = logDir + "/audit_" + QDateTime::currentDateTime().toString("yyyyMMdd") + ".log";
+    
+    d->logDir = logDir;
+    d->logFileBaseName = "audit";
+    d->logFilePath = d->generateLogFileName(QDateTime::currentDateTime());
+    d->logFilePath = logDir + "/" + d->logFilePath;
+    d->lastRotationDate = d->getCurrentRotationDate();
     
     Logger::info("AuditLog", QString("审计日志管理器初始化，日志文件: %1").arg(d->logFilePath));
 }
@@ -226,6 +400,84 @@ int AuditLogManager::getFailureCount(const QString& userId) const
         }
     }
     return count;
+}
+
+// 日志轮转配置
+void AuditLogManager::setRotationEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->rotationEnabled = enabled;
+    Logger::info("AuditLog", QString("日志轮转%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool AuditLogManager::isRotationEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->rotationEnabled;
+}
+
+void AuditLogManager::setRotationStrategy(RotationStrategy strategy)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->rotationStrategy = strategy;
+    d->lastRotationDate = d->getCurrentRotationDate();
+    
+    // 更新当前日志文件路径
+    d->logFilePath = d->logDir + "/" + d->generateLogFileName(QDateTime::currentDateTime());
+    
+    Logger::info("AuditLog", QString("设置日志轮转策略: %1").arg(static_cast<int>(strategy)));
+}
+
+RotationStrategy AuditLogManager::getRotationStrategy() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->rotationStrategy;
+}
+
+void AuditLogManager::setMaxFileSize(qint64 maxSizeBytes)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->maxFileSizeBytes = qMax(1024LL, maxSizeBytes);  // 最小1KB
+    Logger::info("AuditLog", QString("设置最大日志文件大小: %1字节").arg(d->maxFileSizeBytes));
+}
+
+qint64 AuditLogManager::getMaxFileSize() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->maxFileSizeBytes;
+}
+
+void AuditLogManager::setMaxFiles(int maxFiles)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->maxFiles = qMax(0, maxFiles);  // 0表示不限制
+    Logger::info("AuditLog", QString("设置最大日志文件数: %1").arg(d->maxFiles));
+    
+    // 立即清理旧文件
+    locker.unlock();
+    d->cleanupOldFiles();
+}
+
+int AuditLogManager::getMaxFiles() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->maxFiles;
+}
+
+void AuditLogManager::rotateNow()
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->performRotation();
+    Logger::info("AuditLog", "手动执行日志轮转");
 }
 
 } // namespace Core
