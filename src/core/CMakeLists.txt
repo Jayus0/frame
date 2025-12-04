@@ -21,6 +21,7 @@ set(CONFIG_SOURCES
     config/ConfigManager.cpp
     config/ConfigEncryption.cpp
     config/ConfigSchema.cpp
+    config/ConfigVersion.cpp
     config/BackupManager.cpp
 )
 

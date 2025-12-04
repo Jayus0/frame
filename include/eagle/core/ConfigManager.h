@@ -6,6 +6,7 @@
 #include <QtCore/QVariantMap>
 #include <QtCore/QStringList>
 #include <QtCore/QMutex>
+#include "ConfigVersion.h"
 
 namespace Eagle {
 namespace Core {
@@ -51,6 +52,14 @@ public:
     // Schema管理
     void setSchemaPath(const QString& schemaPath);
     QString schemaPath() const;
+    
+    // 版本管理
+    ConfigVersionManager* versionManager() const;
+    int createConfigVersion(const QString& author = QString(), const QString& description = QString());
+    bool rollbackConfig(int version);
+    QList<ConfigVersion> getConfigVersions(int limit = 0) const;
+    ConfigVersion getConfigVersion(int version) const;
+    QList<ConfigDiff> compareConfigVersions(int version1, int version2) const;
     
     // 配置监听
     void watchConfig(const QString& key, QObject* receiver, const char* method);

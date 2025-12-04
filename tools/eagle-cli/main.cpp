@@ -22,6 +22,7 @@
 #include "eagle/core/ResourceMonitor.h"
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
+#include "eagle/core/ConfigVersion.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
 
@@ -87,6 +88,9 @@ public:
         QCommandLineOption loadbalanceOption("loadbalance", "Load balancing management");
         parser.addOption(loadbalanceOption);
         
+        QCommandLineOption configVersionOption("config-version", "Config version management");
+        parser.addOption(configVersionOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -122,6 +126,8 @@ public:
             return handleSignature(args.mid(1));
         } else if (parser.isSet(loadbalanceOption) || command == "loadbalance") {
             return handleLoadBalance(args.mid(1));
+        } else if (parser.isSet(configVersionOption) || command == "config-version" || command == "config") {
+            return handleConfigVersion(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1636,6 +1642,161 @@ private:
         } else {
             std::cerr << "Unknown loadbalance command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli loadbalance show|set|instances'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleConfigVersion(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli config-version <list|show|create|rollback|compare> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            std::cerr << "Error: ConfigManager not available" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ConfigVersionManager* versionManager = configManager->versionManager();
+        if (!versionManager || !versionManager->isEnabled()) {
+            std::cerr << "Error: Config version management is not enabled" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "list") {
+            int limit = 0;
+            if (args.size() > 1) {
+                limit = args[1].toInt();
+            }
+            
+            QList<Eagle::Core::ConfigVersion> versions = configManager->getConfigVersions(limit);
+            
+            std::cout << "Config Versions:" << std::endl;
+            std::cout << "Current Version: " << versionManager->currentVersion() << std::endl;
+            std::cout << "Total Versions: " << versions.size() << std::endl;
+            std::cout << std::endl;
+            
+            for (const Eagle::Core::ConfigVersion& version : versions) {
+                std::cout << "Version " << version.version << ":" << std::endl;
+                std::cout << "  Timestamp: " << version.timestamp.toString(Qt::ISODate).toStdString() << std::endl;
+                std::cout << "  Author: " << version.author.toStdString() << std::endl;
+                std::cout << "  Description: " << version.description.toStdString() << std::endl;
+                std::cout << "  Hash: " << version.configHash.toStdString() << std::endl;
+                std::cout << std::endl;
+            }
+            return 0;
+        } else if (subCommand == "show") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli config-version show <version>" << std::endl;
+                return 1;
+            }
+            
+            bool ok;
+            int version = args[1].toInt(&ok);
+            if (!ok) {
+                std::cerr << "Error: Invalid version number" << std::endl;
+                return 1;
+            }
+            
+            Eagle::Core::ConfigVersion versionObj = configManager->getConfigVersion(version);
+            if (!versionObj.isValid()) {
+                std::cerr << "Error: Version " << version << " not found" << std::endl;
+                return 1;
+            }
+            
+            std::cout << "Version " << versionObj.version << ":" << std::endl;
+            std::cout << "  Timestamp: " << versionObj.timestamp.toString(Qt::ISODate).toStdString() << std::endl;
+            std::cout << "  Author: " << versionObj.author.toStdString() << std::endl;
+            std::cout << "  Description: " << versionObj.description.toStdString() << std::endl;
+            std::cout << "  Hash: " << versionObj.configHash.toStdString() << std::endl;
+            std::cout << "  Config Keys: " << versionObj.config.keys().size() << std::endl;
+            return 0;
+        } else if (subCommand == "create") {
+            QString author = "system";
+            QString description;
+            
+            for (int i = 1; i < args.size(); ++i) {
+                if (args[i] == "--author" && i + 1 < args.size()) {
+                    author = args[++i];
+                } else if (args[i] == "--description" && i + 1 < args.size()) {
+                    description = args[++i];
+                }
+            }
+            
+            int newVersion = configManager->createConfigVersion(author, description);
+            if (newVersion <= 0) {
+                std::cerr << "Error: Failed to create version" << std::endl;
+                return 1;
+            }
+            
+            std::cout << "Created config version: " << newVersion << std::endl;
+            return 0;
+        } else if (subCommand == "rollback") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli config-version rollback <version>" << std::endl;
+                return 1;
+            }
+            
+            bool ok;
+            int version = args[1].toInt(&ok);
+            if (!ok) {
+                std::cerr << "Error: Invalid version number" << std::endl;
+                return 1;
+            }
+            
+            if (!configManager->rollbackConfig(version)) {
+                std::cerr << "Error: Failed to rollback to version " << version << std::endl;
+                return 1;
+            }
+            
+            std::cout << "Config rolled back to version: " << version << std::endl;
+            return 0;
+        } else if (subCommand == "compare") {
+            if (args.size() < 3) {
+                std::cerr << "Usage: eagle-cli config-version compare <version1> <version2>" << std::endl;
+                return 1;
+            }
+            
+            bool ok1, ok2;
+            int version1 = args[1].toInt(&ok1);
+            int version2 = args[2].toInt(&ok2);
+            
+            if (!ok1 || !ok2) {
+                std::cerr << "Error: Invalid version numbers" << std::endl;
+                return 1;
+            }
+            
+            QList<Eagle::Core::ConfigDiff> diffs = configManager->compareConfigVersions(version1, version2);
+            
+            std::cout << "Comparing version " << version1 << " with version " << version2 << ":" << std::endl;
+            std::cout << "Total differences: " << diffs.size() << std::endl;
+            std::cout << std::endl;
+            
+            for (const Eagle::Core::ConfigDiff& diff : diffs) {
+                std::cout << "Key: " << diff.key.toStdString() << std::endl;
+                std::cout << "  Change Type: " << diff.changeType.toStdString() << std::endl;
+                if (diff.oldValue.isValid()) {
+                    std::cout << "  Old Value: " << diff.oldValue.toString().toStdString() << std::endl;
+                }
+                if (diff.newValue.isValid()) {
+                    std::cout << "  New Value: " << diff.newValue.toString().toStdString() << std::endl;
+                }
+                std::cout << std::endl;
+            }
+            return 0;
+        } else {
+            std::cerr << "Unknown config-version command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli config-version list|show|create|rollback|compare'" << std::endl;
             return 1;
         }
     }

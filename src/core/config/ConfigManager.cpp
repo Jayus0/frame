@@ -2,6 +2,7 @@
 #include "ConfigManager_p.h"
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
+#include "eagle/core/ConfigVersion.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -22,6 +23,8 @@ ConfigManager::ConfigManager(QObject* parent)
     : QObject(parent)
     , d_ptr(new ConfigManagerPrivate)
 {
+    auto* d = d_func();
+    d->versionManager = new ConfigVersionManager(this);
 }
 
 ConfigManager::~ConfigManager()
@@ -196,6 +199,9 @@ bool ConfigManager::updateConfig(const QVariantMap& config, ConfigLevel level)
     }
     
     if (targetConfig) {
+        // 保存当前配置用于版本管理
+        QVariantMap oldConfig = *targetConfig;
+        
         for (auto it = config.begin(); it != config.end(); ++it) {
             QVariant oldValue = targetConfig->value(it.key());
             (*targetConfig)[it.key()] = it.value();
@@ -203,6 +209,15 @@ bool ConfigManager::updateConfig(const QVariantMap& config, ConfigLevel level)
                 emit configChanged(it.key(), oldValue, it.value());
             }
         }
+        
+        // 创建新版本（如果版本管理启用）
+        if (d->versionManager && d->versionManager->isEnabled()) {
+            QVariantMap newConfig = *targetConfig;
+            locker.unlock();
+            d->versionManager->createVersion(newConfig, "system", "配置更新");
+            locker.relock();
+        }
+        
         emit configReloaded();
         return true;
     }
@@ -254,6 +269,13 @@ bool ConfigManager::saveToFile(const QString& filePath, ConfigLevel level)
     file.write(doc.toJson());
     file.close();
     
+    // 创建新版本（如果版本管理启用）
+    if (d->versionManager && d->versionManager->isEnabled()) {
+        locker.unlock();
+        d->versionManager->createVersion(configToSave, "system", QString("保存到文件: %1").arg(filePath));
+        locker.relock();
+    }
+    
     Logger::info("ConfigManager", QString("配置保存成功: %1").arg(filePath));
     return true;
 }
@@ -297,6 +319,78 @@ QString ConfigManager::schemaPath() const
     const auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     return d->schemaPath;
+}
+
+ConfigVersionManager* ConfigManager::versionManager() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->versionManager;
+}
+
+int ConfigManager::createConfigVersion(const QString& author, const QString& description)
+{
+    auto* d = d_func();
+    if (!d->versionManager || !d->versionManager->isEnabled()) {
+        Logger::warning("ConfigManager", "版本管理未启用");
+        return 0;
+    }
+    
+    QMutexLocker locker(&d->mutex);
+    QVariantMap currentConfig = getAll();
+    locker.unlock();
+    
+    return d->versionManager->createVersion(currentConfig, author, description);
+}
+
+bool ConfigManager::rollbackConfig(int version)
+{
+    auto* d = d_func();
+    if (!d->versionManager || !d->versionManager->isEnabled()) {
+        Logger::warning("ConfigManager", "版本管理未启用");
+        return false;
+    }
+    
+    QVariantMap rolledBackConfig = d->versionManager->rollbackToVersion(version);
+    if (rolledBackConfig.isEmpty()) {
+        return false;
+    }
+    
+    // 应用回滚的配置
+    QMutexLocker locker(&d->mutex);
+    d->globalConfig = rolledBackConfig;
+    locker.unlock();
+    
+    emit configReloaded();
+    Logger::info("ConfigManager", QString("配置回滚到版本: %1").arg(version));
+    return true;
+}
+
+QList<ConfigVersion> ConfigManager::getConfigVersions(int limit) const
+{
+    const auto* d = d_func();
+    if (!d->versionManager) {
+        return QList<ConfigVersion>();
+    }
+    return d->versionManager->getVersions(limit);
+}
+
+ConfigVersion ConfigManager::getConfigVersion(int version) const
+{
+    const auto* d = d_func();
+    if (!d->versionManager) {
+        return ConfigVersion();
+    }
+    return d->versionManager->getVersion(version);
+}
+
+QList<ConfigDiff> ConfigManager::compareConfigVersions(int version1, int version2) const
+{
+    const auto* d = d_func();
+    if (!d->versionManager) {
+        return QList<ConfigDiff>();
+    }
+    return d->versionManager->compareVersions(version1, version2);
 }
 
 void ConfigManager::watchConfig(const QString& key, QObject* receiver, const char* method)

@@ -5,6 +5,7 @@
 #include <QtCore/QMap>
 #include <QtCore/QMutex>
 #include <QtCore/QByteArray>
+#include "eagle/core/ConfigVersion.h"
 
 namespace Eagle {
 namespace Core {
@@ -20,6 +21,7 @@ public:
     QStringList sensitiveKeys;  // 需要加密的键列表
     QString encryptionKey;  // 加密密钥
     QString schemaPath;  // Schema文件路径
+    ConfigVersionManager* versionManager;  // 版本管理器
 };
 
 } // namespace Core

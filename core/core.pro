@@ -27,6 +27,7 @@ CONFIG_SOURCES += \
     ../src/core/config/ConfigManager.cpp \
     ../src/core/config/ConfigEncryption.cpp \
     ../src/core/config/ConfigSchema.cpp \
+    ../src/core/config/ConfigVersion.cpp \
     ../src/core/config/BackupManager.cpp
 
 # 安全模块

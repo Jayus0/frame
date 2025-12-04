@@ -18,6 +18,7 @@
 #include "eagle/core/ResourceMonitor.h"
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
+#include "eagle/core/ConfigVersion.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
 #include <QtCore/QJsonObject>
@@ -2073,6 +2074,242 @@ void registerApiRoutes(ApiServer* server) {
         result["instanceId"] = instanceId;
         result["healthy"] = healthy;
         result["message"] = QString("实例健康状态已更新为: %1").arg(healthy ? "健康" : "不健康");
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/config/versions - 获取配置版本列表
+    server->get("/api/v1/config/versions", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.version.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.version.view");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        ConfigVersionManager* versionManager = configManager->versionManager();
+        if (!versionManager || !versionManager->isEnabled()) {
+            resp.setError(400, "Bad Request", "配置版本管理未启用");
+            return;
+        }
+        
+        QUrlQuery query(req.query);
+        int limit = query.queryItemValue("limit").toInt();
+        
+        QList<ConfigVersion> versions = configManager->getConfigVersions(limit);
+        
+        QJsonArray versionsArray;
+        for (const ConfigVersion& version : versions) {
+            QJsonObject versionObj;
+            versionObj["version"] = version.version;
+            versionObj["timestamp"] = version.timestamp.toString(Qt::ISODate);
+            versionObj["author"] = version.author;
+            versionObj["description"] = version.description;
+            versionObj["configHash"] = version.configHash;
+            versionsArray.append(versionObj);
+        }
+        
+        QJsonObject result;
+        result["versions"] = versionsArray;
+        result["currentVersion"] = versionManager->currentVersion();
+        result["totalCount"] = versions.size();
+        
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/config/versions/{version} - 获取指定版本
+    server->get("/api/v1/config/versions/{version}", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.version.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.version.view");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        ConfigVersionManager* versionManager = configManager->versionManager();
+        if (!versionManager || !versionManager->isEnabled()) {
+            resp.setError(400, "Bad Request", "配置版本管理未启用");
+            return;
+        }
+        
+        QString versionStr = req.pathParams.value("version");
+        bool ok;
+        int version = versionStr.toInt(&ok);
+        if (!ok) {
+            resp.setError(400, "Bad Request", "无效的版本号");
+            return;
+        }
+        
+        ConfigVersion versionObj = configManager->getConfigVersion(version);
+        if (!versionObj.isValid()) {
+            resp.setError(404, "Not Found", QString("版本 %1 不存在").arg(version));
+            return;
+        }
+        
+        QJsonObject result;
+        result["version"] = versionObj.version;
+        result["timestamp"] = versionObj.timestamp.toString(Qt::ISODate);
+        result["author"] = versionObj.author;
+        result["description"] = versionObj.description;
+        result["configHash"] = versionObj.configHash;
+        result["config"] = QJsonObject::fromVariantMap(versionObj.config);
+        
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/config/versions - 创建新版本
+    server->post("/api/v1/config/versions", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.version.create")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.version.create");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        ConfigVersionManager* versionManager = configManager->versionManager();
+        if (!versionManager || !versionManager->isEnabled()) {
+            resp.setError(400, "Bad Request", "配置版本管理未启用");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString author = body.value("author").toString(userId);
+        QString description = body.value("description").toString();
+        int version = body.value("version").toInt(0);
+        
+        int newVersion = configManager->createConfigVersion(author, description);
+        if (newVersion <= 0) {
+            resp.setError(500, "Internal Server Error", "创建版本失败");
+            return;
+        }
+        
+        QJsonObject result;
+        result["version"] = newVersion;
+        result["message"] = "配置版本创建成功";
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/config/versions/{version}/rollback - 回滚到指定版本
+    server->post("/api/v1/config/versions/{version}/rollback", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.version.rollback")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.version.rollback");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        ConfigVersionManager* versionManager = configManager->versionManager();
+        if (!versionManager || !versionManager->isEnabled()) {
+            resp.setError(400, "Bad Request", "配置版本管理未启用");
+            return;
+        }
+        
+        QString versionStr = req.pathParams.value("version");
+        bool ok;
+        int version = versionStr.toInt(&ok);
+        if (!ok) {
+            resp.setError(400, "Bad Request", "无效的版本号");
+            return;
+        }
+        
+        if (!configManager->rollbackConfig(version)) {
+            resp.setError(500, "Internal Server Error", "回滚失败");
+            return;
+        }
+        
+        QJsonObject result;
+        result["version"] = version;
+        result["message"] = QString("配置已回滚到版本 %1").arg(version);
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/config/versions/{version1}/compare/{version2} - 对比两个版本
+    server->get("/api/v1/config/versions/{version1}/compare/{version2}", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.version.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.version.view");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        ConfigVersionManager* versionManager = configManager->versionManager();
+        if (!versionManager || !versionManager->isEnabled()) {
+            resp.setError(400, "Bad Request", "配置版本管理未启用");
+            return;
+        }
+        
+        QString version1Str = req.pathParams.value("version1");
+        QString version2Str = req.pathParams.value("version2");
+        bool ok1, ok2;
+        int version1 = version1Str.toInt(&ok1);
+        int version2 = version2Str.toInt(&ok2);
+        
+        if (!ok1 || !ok2) {
+            resp.setError(400, "Bad Request", "无效的版本号");
+            return;
+        }
+        
+        QList<ConfigDiff> diffs = configManager->compareConfigVersions(version1, version2);
+        
+        QJsonArray diffsArray;
+        for (const ConfigDiff& diff : diffs) {
+            QJsonObject diffObj;
+            diffObj["key"] = diff.key;
+            diffObj["changeType"] = diff.changeType;
+            if (diff.oldValue.isValid()) {
+                diffObj["oldValue"] = QJsonValue::fromVariant(diff.oldValue);
+            }
+            if (diff.newValue.isValid()) {
+                diffObj["newValue"] = QJsonValue::fromVariant(diff.newValue);
+            }
+            diffsArray.append(diffObj);
+        }
+        
+        QJsonObject result;
+        result["version1"] = version1;
+        result["version2"] = version2;
+        result["diffs"] = diffsArray;
+        result["diffCount"] = diffs.size();
+        
         resp.setSuccess(result);
     });
 }
