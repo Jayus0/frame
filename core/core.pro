@@ -32,7 +32,9 @@ SOURCES += \
     ../src/core/NotificationChannel.cpp \
     ../src/core/EmailChannel.cpp \
     ../src/core/WebhookChannel.cpp \
-    ../src/core/BackupManager.cpp
+    ../src/core/BackupManager.cpp \
+    ../src/core/TestCaseBase.cpp \
+    ../src/core/TestRunner.cpp
 
 # 头文件
 HEADERS += \
@@ -78,7 +80,10 @@ HEADERS += \
     ../include/eagle/core/EmailChannel.h \
     ../include/eagle/core/WebhookChannel.h \
     ../include/eagle/core/BackupManager.h \
-    ../src/core/BackupManager_p.h
+    ../src/core/BackupManager_p.h \
+    ../include/eagle/core/TestCaseBase.h \
+    ../include/eagle/core/TestRunner.h \
+    ../src/core/TestRunner_p.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

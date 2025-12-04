@@ -1,0 +1,111 @@
+#include "eagle/core/TestCaseBase.h"
+#include "eagle/core/ConfigManager.h"
+#include "eagle/core/TestUtils.h"
+#include <QtCore/QObject>
+#include <QtCore/QFile>
+
+/**
+ * @brief 配置管理测试
+ */
+class ConfigManagerTest : public Eagle::Core::TestCaseBase {
+    Q_OBJECT
+    
+public:
+    explicit ConfigManagerTest(QObject* parent = nullptr)
+        : TestCaseBase(parent)
+    {
+        setTestName("ConfigManagerTest");
+        setTestDescription("测试配置管理功能");
+    }
+    
+private slots:
+    void initTestCase();
+    void cleanupTestCase();
+    void testSetAndGet();
+    void testLoadFromFile();
+    void testSaveToFile();
+    void testConfigChanged();
+    
+private:
+    Eagle::Core::ConfigManager* configManager;
+    QString tempConfigFile;
+};
+
+void ConfigManagerTest::initTestCase()
+{
+    setUp();
+    
+    configManager = new Eagle::Core::ConfigManager(this);
+    assertNotNull(QVariant::fromValue(configManager), "ConfigManager should be created");
+    
+    tempConfigFile = Eagle::Core::TestUtils::createTempFile();
+}
+
+void ConfigManagerTest::cleanupTestCase()
+{
+    if (!tempConfigFile.isEmpty()) {
+        Eagle::Core::TestUtils::removeTempFile(tempConfigFile);
+    }
+    
+    tearDown();
+}
+
+void ConfigManagerTest::testSetAndGet()
+{
+    // 测试设置和获取配置
+    configManager->set("test.key", "test.value");
+    QString value = configManager->get("test.key").toString();
+    assertEqual(QVariant("test.value"), QVariant(value), "Config value should match");
+}
+
+void ConfigManagerTest::testLoadFromFile()
+{
+    // 创建测试配置文件
+    QString jsonContent = R"({"test": {"key": "value"}})";
+    QFile file(tempConfigFile);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        file.write(jsonContent.toUtf8());
+        file.close();
+    }
+    
+    // 测试加载配置
+    bool loaded = configManager->loadFromFile(tempConfigFile);
+    assertTrue(loaded, "Config should load from file");
+    
+    QString value = configManager->get("test.key").toString();
+    assertEqual(QVariant("value"), QVariant(value), "Loaded config value should match");
+}
+
+void ConfigManagerTest::testSaveToFile()
+{
+    // 设置配置
+    configManager->set("save.test", "save.value");
+    
+    // 保存配置
+    bool saved = configManager->saveToFile(tempConfigFile);
+    assertTrue(saved, "Config should save to file");
+    
+    // 验证文件存在
+    assertTrue(QFile::exists(tempConfigFile), "Config file should exist");
+}
+
+void ConfigManagerTest::testConfigChanged()
+{
+    // 测试配置变更信号
+    bool signalReceived = false;
+    connect(configManager, &Eagle::Core::ConfigManager::configChanged,
+            [&signalReceived](const QString& key, const QVariant&, const QVariant&) {
+                if (key == "signal.test") {
+                    signalReceived = true;
+                }
+            });
+    
+    configManager->set("signal.test", "signal.value");
+    
+    // 等待信号（简化实现）
+    Eagle::Core::TestUtils::wait(100);
+    assertTrue(signalReceived, "Config changed signal should be emitted");
+}
+
+QTEST_MAIN(ConfigManagerTest)
+#include "ConfigManagerTest.moc"

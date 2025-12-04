@@ -14,6 +14,8 @@
 #include <iostream>
 #include "eagle/core/Framework.h"
 #include "eagle/core/BackupManager.h"
+#include "eagle/core/TestRunner.h"
+#include "eagle/core/TestCaseBase.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -47,6 +49,9 @@ public:
         QCommandLineOption backupOption("backup", "Backup management");
         parser.addOption(backupOption);
         
+        QCommandLineOption testOption("test", "Run tests");
+        parser.addOption(testOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -62,6 +67,8 @@ public:
             return handleDebug(args.mid(1));
         } else if (parser.isSet(backupOption) || command == "backup") {
             return handleBackup(args.mid(1));
+        } else if (parser.isSet(testOption) || command == "test") {
+            return handleTest(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -493,6 +500,137 @@ private:
             return true;
         }
         return false;
+    }
+    
+    int handleTest(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli test <run|create> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        if (subCommand == "run") {
+            // 初始化框架
+            Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+            if (!framework->initialize()) {
+                std::cerr << "Error: Failed to initialize framework" << std::endl;
+                return 1;
+            }
+            
+            // 创建测试运行器
+            Eagle::Core::TestRunner* runner = new Eagle::Core::TestRunner();
+            
+            // 配置运行器
+            QString outputFile;
+            Eagle::Core::TestReportFormat format = Eagle::Core::TestReportFormat::Console;
+            bool verbose = false;
+            
+            for (int i = 1; i < args.size(); ++i) {
+                if (args[i] == "--output" || args[i] == "-o") {
+                    if (i + 1 < args.size()) {
+                        outputFile = args[++i];
+                    }
+                } else if (args[i] == "--format" || args[i] == "-f") {
+                    if (i + 1 < args.size()) {
+                        QString formatStr = args[++i].toLower();
+                        if (formatStr == "json") {
+                            format = Eagle::Core::TestReportFormat::JSON;
+                        } else if (formatStr == "html") {
+                            format = Eagle::Core::TestReportFormat::HTML;
+                        }
+                    }
+                } else if (args[i] == "--verbose" || args[i] == "-v") {
+                    verbose = true;
+                }
+            }
+            
+            runner->setReportFormat(format);
+            runner->setVerbose(verbose);
+            if (!outputFile.isEmpty()) {
+                runner->setOutputFile(outputFile);
+            }
+            
+            // 运行测试（这里简化实现，实际应该发现和注册测试类）
+            QStringList testNames;
+            if (args.size() > 1 && args[1] != "--output" && args[1] != "--format" && args[1] != "--verbose") {
+                testNames = args.mid(1);
+            }
+            
+            bool success = runner->runTests(testNames);
+            
+            // 输出结果
+            if (verbose || outputFile.isEmpty()) {
+                QString report = runner->generateReport(format);
+                std::cout << report.toStdString() << std::endl;
+            }
+            
+            delete runner;
+            return success ? 0 : 1;
+        } else if (subCommand == "create") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli test create <plugin|config|service> <name>" << std::endl;
+                return 1;
+            }
+            
+            QString type = args[1];
+            QString name = args.size() > 2 ? args[2] : "Test";
+            
+            QString templateFile;
+            QString outputFile;
+            
+            if (type == "plugin") {
+                templateFile = "templates/test_plugin_test.cpp.template";
+                outputFile = QString("tests/%1Test.cpp").arg(name);
+            } else if (type == "config") {
+                templateFile = "templates/test_config_test.cpp.template";
+                outputFile = QString("tests/%1Test.cpp").arg(name);
+            } else {
+                std::cerr << "Unknown test type: " << type.toStdString() << std::endl;
+                return 1;
+            }
+            
+            // 读取模板
+            QFile templateFileHandle(templateFile);
+            if (!templateFileHandle.exists()) {
+                std::cerr << "Error: Template file not found: " << templateFile.toStdString() << std::endl;
+                return 1;
+            }
+            
+            if (!templateFileHandle.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                std::cerr << "Error: Cannot open template file" << std::endl;
+                return 1;
+            }
+            
+            QString content = templateFileHandle.readAll();
+            templateFileHandle.close();
+            
+            // 替换占位符
+            content.replace("{{PLUGIN_NAME}}", name);
+            content.replace("{{PLUGIN_ID}}", name.toLower());
+            
+            // 确保输出目录存在
+            QDir dir;
+            dir.mkpath("tests");
+            
+            // 写入文件
+            QFile outputFileHandle(outputFile);
+            if (!outputFileHandle.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                std::cerr << "Error: Cannot create test file: " << outputFile.toStdString() << std::endl;
+                return 1;
+            }
+            
+            QTextStream out(&outputFileHandle);
+            out << content;
+            outputFileHandle.close();
+            
+            std::cout << "Test file created: " << outputFile.toStdString() << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Unknown test command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli test run' or 'eagle-cli test create'" << std::endl;
+            return 1;
+        }
     }
 };
 

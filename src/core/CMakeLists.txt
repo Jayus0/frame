@@ -24,6 +24,8 @@ set(SOURCES
     EmailChannel.cpp
     WebhookChannel.cpp
     BackupManager.cpp
+    TestCaseBase.cpp
+    TestRunner.cpp
 )
 
 # 使用相对路径（相对于src/core目录），这样Qt Creator会显示相对路径而不是绝对路径
@@ -56,6 +58,8 @@ set(HEADERS
     ../../include/eagle/core/EmailChannel.h
     ../../include/eagle/core/WebhookChannel.h
     ../../include/eagle/core/BackupManager.h
+    ../../include/eagle/core/TestCaseBase.h
+    ../../include/eagle/core/TestRunner.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})

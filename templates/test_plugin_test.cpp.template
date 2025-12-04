@@ -1,0 +1,83 @@
+#include "eagle/core/TestCaseBase.h"
+#include "eagle/core/PluginManager.h"
+#include "eagle/core/Framework.h"
+#include <QtCore/QObject>
+
+/**
+ * @brief {{PLUGIN_NAME}}插件测试
+ */
+class {{PLUGIN_NAME}}Test : public Eagle::Core::TestCaseBase {
+    Q_OBJECT
+    
+public:
+    explicit {{PLUGIN_NAME}}Test(QObject* parent = nullptr)
+        : TestCaseBase(parent)
+    {
+        setTestName("{{PLUGIN_NAME}}Test");
+        setTestDescription("测试{{PLUGIN_NAME}}插件功能");
+    }
+    
+private slots:
+    void initTestCase();
+    void cleanupTestCase();
+    void testPluginLoad();
+    void testPluginUnload();
+    void testPluginFunctionality();
+    
+private:
+    Eagle::Core::Framework* framework;
+    Eagle::Core::PluginManager* pluginManager;
+    QString pluginId;
+};
+
+void {{PLUGIN_NAME}}Test::initTestCase()
+{
+    setUp();
+    
+    framework = Eagle::Core::Framework::instance();
+    assertNotNull(QVariant::fromValue(framework), "Framework should be initialized");
+    
+    if (!framework->isInitialized()) {
+        framework->initialize();
+    }
+    
+    pluginManager = framework->pluginManager();
+    assertNotNull(QVariant::fromValue(pluginManager), "PluginManager should be available");
+    
+    pluginId = "{{PLUGIN_ID}}";
+}
+
+void {{PLUGIN_NAME}}Test::cleanupTestCase()
+{
+    tearDown();
+}
+
+void {{PLUGIN_NAME}}Test::testPluginLoad()
+{
+    // 测试插件加载
+    bool loaded = pluginManager->loadPlugin(pluginId);
+    assertTrue(loaded, QString("Plugin %1 should load successfully").arg(pluginId));
+    
+    bool isLoaded = pluginManager->isPluginLoaded(pluginId);
+    assertTrue(isLoaded, QString("Plugin %1 should be loaded").arg(pluginId));
+}
+
+void {{PLUGIN_NAME}}Test::testPluginUnload()
+{
+    // 测试插件卸载
+    bool unloaded = pluginManager->unloadPlugin(pluginId);
+    assertTrue(unloaded, QString("Plugin %1 should unload successfully").arg(pluginId));
+    
+    bool isLoaded = pluginManager->isPluginLoaded(pluginId);
+    assertFalse(isLoaded, QString("Plugin %1 should not be loaded").arg(pluginId));
+}
+
+void {{PLUGIN_NAME}}Test::testPluginFunctionality()
+{
+    // 测试插件功能
+    // TODO: 添加具体的功能测试
+    assertTrue(true, "Plugin functionality test placeholder");
+}
+
+QTEST_MAIN({{PLUGIN_NAME}}Test)
+#include "{{PLUGIN_NAME}}Test.moc"
