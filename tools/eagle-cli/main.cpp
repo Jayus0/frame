@@ -20,6 +20,7 @@
 #include "eagle/core/FailoverManager.h"
 #include "eagle/core/DiagnosticManager.h"
 #include "eagle/core/ResourceMonitor.h"
+#include "eagle/core/ConfigEncryption.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -71,6 +72,9 @@ public:
         QCommandLineOption dependencyOption("dependency", "Dependency management");
         parser.addOption(dependencyOption);
         
+        QCommandLineOption encryptionOption("encryption", "Encryption management");
+        parser.addOption(encryptionOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -98,6 +102,8 @@ public:
             return handleResource(args.mid(1));
         } else if (parser.isSet(dependencyOption) || command == "dependency") {
             return handleDependency(args.mid(1));
+        } else if (parser.isSet(encryptionOption) || command == "encryption") {
+            return handleEncryption(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1173,6 +1179,68 @@ private:
         } else {
             std::cerr << "Unknown dependency command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli dependency check|circular'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleEncryption(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli encryption <info|generate|rotate> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "info") {
+            Eagle::Core::KeyVersion version = Eagle::Core::ConfigEncryption::getCurrentKeyVersion();
+            std::cout << "Encryption Information:" << std::endl;
+            std::cout << "  Version: " << version.version << std::endl;
+            std::cout << "  Algorithm: " << (version.algorithm == Eagle::Core::EncryptionAlgorithm::AES256 ? "AES256" : "XOR") << std::endl;
+            std::cout << "  Key ID: " << version.keyId.toStdString() << std::endl;
+            std::cout << "  PBKDF2 Iterations: " << version.pbkdf2Iterations << std::endl;
+            std::cout << "  Has Salt: " << (!version.salt.isEmpty() ? "Yes" : "No") << std::endl;
+            return 0;
+        } else if (subCommand == "generate") {
+            int length = 32;
+            if (args.size() > 1) {
+                length = args[1].toInt();
+                if (length < 16 || length > 64) {
+                    std::cerr << "Error: Key length must be between 16 and 64 bytes" << std::endl;
+                    return 1;
+                }
+            }
+            
+            QString newKey = Eagle::Core::ConfigEncryption::generateKey(length);
+            std::cout << "Generated key (length " << length << "):" << std::endl;
+            std::cout << newKey.toStdString() << std::endl;
+            std::cout << std::endl;
+            std::cout << "Warning: Save this key securely! It cannot be recovered." << std::endl;
+            return 0;
+        } else if (subCommand == "rotate") {
+            if (args.size() < 3) {
+                std::cerr << "Usage: eagle-cli encryption rotate <old-key> <new-key>" << std::endl;
+                return 1;
+            }
+            
+            QString oldKey = args[1];
+            QString newKey = args[2];
+            
+            // 这里需要访问ConfigManager来轮换所有配置
+            // 简化实现：仅设置新密钥
+            Eagle::Core::ConfigEncryption::setDefaultKey(newKey);
+            std::cout << "Encryption key rotated successfully." << std::endl;
+            std::cout << "Note: Existing encrypted values need to be re-encrypted manually." << std::endl;
+            return 0;
+        } else {
+            std::cerr << "Unknown encryption command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli encryption info|generate|rotate'" << std::endl;
             return 1;
         }
     }

@@ -16,6 +16,7 @@
 #include "eagle/core/FailoverManager.h"
 #include "eagle/core/DiagnosticManager.h"
 #include "eagle/core/ResourceMonitor.h"
+#include "eagle/core/ConfigEncryption.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -1476,6 +1477,118 @@ void registerApiRoutes(ApiServer* server) {
         data["events"] = eventArray;
         data["count"] = eventArray.size();
         resp.setSuccess(data);
+    });
+    
+    // GET /api/v1/config/encryption/key - 获取加密密钥信息
+    server->get("/api/v1/config/encryption/key", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.encryption.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.encryption.view");
+            return;
+        }
+        
+        KeyVersion version = ConfigEncryption::getCurrentKeyVersion();
+        
+        QJsonObject result;
+        result["version"] = version.version;
+        result["algorithm"] = (version.algorithm == EncryptionAlgorithm::AES256 ? "AES256" : "XOR");
+        result["keyId"] = version.keyId;
+        result["pbkdf2Iterations"] = version.pbkdf2Iterations;
+        result["hasSalt"] = !version.salt.isEmpty();
+        
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/config/encryption/rotate - 轮换加密密钥
+    server->post("/api/v1/config/encryption/rotate", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.encryption.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.encryption.manage");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString newKey = body.value("newKey").toString();
+        QString oldKey = body.value("oldKey").toString();
+        
+        if (newKey.isEmpty()) {
+            resp.setError(400, "Bad Request", "newKey is required");
+            return;
+        }
+        
+        // 如果提供了oldKey，执行密钥轮换
+        if (!oldKey.isEmpty()) {
+            // 这里需要遍历所有配置并重新加密（简化实现）
+            ConfigManager* configManager = framework->configManager();
+            if (configManager) {
+                // 获取所有配置键
+                QStringList keys = configManager->keys();
+                int rotated = 0;
+                
+                for (const QString& key : keys) {
+                    QVariant value = configManager->get(key);
+                    if (value.type() == QVariant::String) {
+                        QString strValue = value.toString();
+                        if (strValue.startsWith("ENC:")) {
+                            QString encrypted = strValue.mid(4);
+                            QString rotatedValue = ConfigEncryption::rotateKey(encrypted, oldKey, newKey);
+                            if (!rotatedValue.isEmpty()) {
+                                configManager->set(key, QString("ENC:%1").arg(rotatedValue));
+                                rotated++;
+                            }
+                        }
+                    }
+                }
+                
+                QJsonObject result;
+                result["rotated"] = rotated;
+                result["message"] = QString("密钥轮换完成，已更新 %1 个配置项").arg(rotated);
+                resp.setSuccess(result);
+            } else {
+                resp.setError(500, "ConfigManager not available");
+            }
+        } else {
+            // 仅设置新密钥（不执行轮换）
+            ConfigEncryption::setDefaultKey(newKey);
+            
+            QJsonObject result;
+            result["message"] = "新密钥已设置";
+            resp.setSuccess(result);
+        }
+    });
+    
+    // POST /api/v1/config/encryption/generate - 生成新密钥
+    server->post("/api/v1/config/encryption/generate", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.encryption.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.encryption.manage");
+            return;
+        }
+        
+        int length = req.jsonBody().value("length").toInt(32);
+        if (length < 16 || length > 64) {
+            resp.setError(400, "Bad Request", "密钥长度必须在16-64字节之间");
+            return;
+        }
+        
+        QString newKey = ConfigEncryption::generateKey(length);
+        
+        QJsonObject result;
+        result["key"] = newKey;
+        result["length"] = length;
+        result["message"] = "新密钥已生成";
+        resp.setSuccess(result);
     });
 }
 
