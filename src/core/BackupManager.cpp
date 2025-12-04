@@ -417,6 +417,7 @@ QString BackupManager::triggerScheduledBackup()
 
 void BackupManager::onConfigChanged(const QString& key)
 {
+    Q_UNUSED(key);
     auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     
@@ -476,7 +477,6 @@ bool BackupManager::saveBackupInfo(const BackupInfo& info) const
 
 BackupInfo BackupManager::loadBackupInfo(const QString& backupId) const
 {
-    const auto* d = d_func();
     QString filePath = generateBackupFilePath(backupId);
     QString infoFilePath = filePath + ".info";
     

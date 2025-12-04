@@ -25,6 +25,8 @@ namespace Core {
  */
 Middleware createAuthMiddleware(Framework* framework) {
     return [framework](const HttpRequest& request, HttpResponse& response) -> bool {
+        Q_UNUSED(request);
+        Q_UNUSED(response);
         if (!framework) {
             response.setError(500, "Framework not available");
             return false;
@@ -330,6 +332,7 @@ void registerApiRoutes(ApiServer* server) {
     
     // GET /api/v1/health - 健康检查
     server->get("/api/v1/health", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
         QJsonObject health;
         health["status"] = "healthy";
         health["timestamp"] = QDateTime::currentDateTime().toString(Qt::ISODate);
@@ -362,6 +365,7 @@ void registerApiRoutes(ApiServer* server) {
     
     // GET /api/v1/metrics - 监控指标
     server->get("/api/v1/metrics", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
         PerformanceMonitor* monitor = framework->performanceMonitor();
         if (!monitor) {
             resp.setError(500, "PerformanceMonitor not available");
@@ -544,7 +548,7 @@ void registerApiRoutes(ApiServer* server) {
             return;
         }
         
-        QJsonObject body = req.body.toJsonObject();
+        QJsonObject body = req.jsonBody();
         BackupType type = static_cast<BackupType>(body.value("type").toInt(0));
         QString name = body.value("name").toString();
         QString description = body.value("description").toString();
