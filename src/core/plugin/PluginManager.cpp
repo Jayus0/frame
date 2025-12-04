@@ -190,15 +190,27 @@ bool PluginManager::loadPlugin(const QString& pluginId)
         Logger::error("PluginManager", QString("检测到循环依赖: %1").arg(cycleStr));
         emit pluginError(pluginId, QString("Circular dependency detected: %1").arg(cycleStr));
         
-        // 发送告警
+        // 发送告警（通过创建告警规则和记录）
         Framework* framework = qobject_cast<Framework*>(parent());
         if (framework && framework->alertSystem()) {
-            framework->alertSystem()->triggerAlert(
-                "plugin.circular_dependency",
-                "插件循环依赖",
-                AlertLevel::Error,
-                QString("插件 %1 存在循环依赖: %2").arg(pluginId, cycleStr)
-            );
+            AlertSystem* alertSystem = framework->alertSystem();
+            // 创建临时告警规则（如果不存在）
+            AlertRule rule;
+            rule.id = "plugin.circular_dependency";
+            rule.name = "插件循环依赖";
+            rule.metricName = "plugin.circular_dependency";
+            rule.level = AlertLevel::Error;
+            rule.condition = "==";
+            rule.threshold = 1.0;
+            rule.enabled = true;
+            rule.description = "检测到插件循环依赖";
+            
+            if (!alertSystem->getRule(rule.id).isValid()) {
+                alertSystem->addRule(rule);
+            }
+            
+            // 记录告警（通过Logger，AlertSystem会自动检查规则）
+            Logger::error("PluginManager", QString("插件 %1 存在循环依赖: %2").arg(pluginId, cycleStr));
         }
         
         return false;

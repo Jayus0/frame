@@ -1523,38 +1523,39 @@ void registerApiRoutes(ApiServer* server) {
             return;
         }
         
-        // 如果提供了oldKey，执行密钥轮换
-        if (!oldKey.isEmpty()) {
-            // 这里需要遍历所有配置并重新加密（简化实现）
-            ConfigManager* configManager = framework->configManager();
-            if (configManager) {
-                // 获取所有配置键
-                QStringList keys = configManager->keys();
-                int rotated = 0;
-                
-                for (const QString& key : keys) {
-                    QVariant value = configManager->get(key);
-                    if (value.type() == QVariant::String) {
-                        QString strValue = value.toString();
-                        if (strValue.startsWith("ENC:")) {
-                            QString encrypted = strValue.mid(4);
-                            QString rotatedValue = ConfigEncryption::rotateKey(encrypted, oldKey, newKey);
-                            if (!rotatedValue.isEmpty()) {
-                                configManager->set(key, QString("ENC:%1").arg(rotatedValue));
-                                rotated++;
+            // 如果提供了oldKey，执行密钥轮换
+            if (!oldKey.isEmpty()) {
+                // 这里需要遍历所有配置并重新加密（简化实现）
+                ConfigManager* configManager = framework->configManager();
+                if (configManager) {
+                    // 获取所有配置
+                    QVariantMap allConfig = configManager->getAll();
+                    QStringList keys = allConfig.keys();
+                    int rotated = 0;
+                    
+                    for (const QString& key : keys) {
+                        QVariant value = allConfig.value(key);
+                        if (value.type() == QVariant::String) {
+                            QString strValue = value.toString();
+                            if (strValue.startsWith("ENC:")) {
+                                QString encrypted = strValue.mid(4);
+                                QString rotatedValue = ConfigEncryption::rotateKey(encrypted, oldKey, newKey);
+                                if (!rotatedValue.isEmpty()) {
+                                    configManager->set(key, QString("ENC:%1").arg(rotatedValue));
+                                    rotated++;
+                                }
                             }
                         }
                     }
+                    
+                    QJsonObject result;
+                    result["rotated"] = rotated;
+                    result["message"] = QString("密钥轮换完成，已更新 %1 个配置项").arg(rotated);
+                    resp.setSuccess(result);
+                } else {
+                    resp.setError(500, "ConfigManager not available");
                 }
-                
-                QJsonObject result;
-                result["rotated"] = rotated;
-                result["message"] = QString("密钥轮换完成，已更新 %1 个配置项").arg(rotated);
-                resp.setSuccess(result);
             } else {
-                resp.setError(500, "ConfigManager not available");
-            }
-        } else {
             // 仅设置新密钥（不执行轮换）
             ConfigEncryption::setDefaultKey(newKey);
             
