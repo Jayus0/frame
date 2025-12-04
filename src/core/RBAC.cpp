@@ -4,6 +4,8 @@
 #include <QtCore/QMutexLocker>
 #include <QtCore/QVariantMap>
 #include <QtCore/QVariantList>
+#include <QtCore/QDateTime>
+#include <algorithm>
 
 namespace Eagle {
 namespace Core {
@@ -136,6 +138,11 @@ bool RBACManager::addPermission(const Permission& permission)
     
     d->permissions[permission.name] = permission;
     Logger::info("RBACManager", QString("添加权限: %1").arg(permission.name));
+    
+    // 清除相关缓存（所有包含此权限的缓存）
+    locker.unlock();
+    clearPermissionCache(permission.name);
+    
     emit permissionAdded(permission.name);
     return true;
 }
@@ -160,6 +167,11 @@ bool RBACManager::removePermission(const QString& permissionName)
     
     d->permissions.remove(permissionName);
     Logger::info("RBACManager", QString("移除权限: %1").arg(permissionName));
+    
+    // 清除相关缓存
+    locker.unlock();
+    clearPermissionCache(permissionName);
+    
     emit permissionRemoved(permissionName);
     return true;
 }
@@ -200,6 +212,11 @@ bool RBACManager::addRole(const Role& role)
     
     d->roles[role.name] = role;
     Logger::info("RBACManager", QString("添加角色: %1").arg(role.name));
+    
+    // 清除所有缓存（角色变更可能影响所有用户）
+    locker.unlock();
+    clearCache();
+    
     emit roleAdded(role.name);
     return true;
 }
@@ -219,6 +236,11 @@ bool RBACManager::removeRole(const QString& roleName)
     
     d->roles.remove(roleName);
     Logger::info("RBACManager", QString("移除角色: %1").arg(roleName));
+    
+    // 清除所有缓存（角色变更可能影响所有用户）
+    locker.unlock();
+    clearCache();
+    
     emit roleRemoved(roleName);
     return true;
 }
@@ -239,6 +261,11 @@ bool RBACManager::assignPermissionToRole(const QString& roleName, const QString&
     
     d->roles[roleName].permissions.insert(permissionName);
     Logger::info("RBACManager", QString("为角色 %1 分配权限: %2").arg(roleName, permissionName));
+    
+    // 清除相关缓存
+    locker.unlock();
+    clearPermissionCache(permissionName);
+    
     return true;
 }
 
@@ -252,6 +279,11 @@ bool RBACManager::revokePermissionFromRole(const QString& roleName, const QStrin
     
     d->roles[roleName].permissions.remove(permissionName);
     Logger::info("RBACManager", QString("从角色 %1 撤销权限: %2").arg(roleName, permissionName));
+    
+    // 清除相关缓存
+    locker.unlock();
+    clearPermissionCache(permissionName);
+    
     return true;
 }
 
@@ -272,6 +304,11 @@ bool RBACManager::addRoleInheritance(const QString& childRole, const QString& pa
     
     d->roles[childRole].parentRoles.insert(parentRole);
     Logger::info("RBACManager", QString("角色 %1 继承角色 %2").arg(childRole, parentRole));
+    
+    // 清除所有缓存（角色继承变更可能影响所有用户）
+    locker.unlock();
+    clearCache();
+    
     return true;
 }
 
@@ -312,6 +349,11 @@ bool RBACManager::addUser(const User& user)
     
     d->users[user.userId] = user;
     Logger::info("RBACManager", QString("添加用户: %1").arg(user.userId));
+    
+    // 清除该用户的缓存（如果有）
+    locker.unlock();
+    clearUserCache(user.userId);
+    
     emit userAdded(user.userId);
     return true;
 }
@@ -326,6 +368,11 @@ bool RBACManager::removeUser(const QString& userId)
     
     d->users.remove(userId);
     Logger::info("RBACManager", QString("移除用户: %1").arg(userId));
+    
+    // 清除该用户的缓存
+    locker.unlock();
+    clearUserCache(userId);
+    
     emit userRemoved(userId);
     return true;
 }
@@ -346,6 +393,11 @@ bool RBACManager::assignRoleToUser(const QString& userId, const QString& roleNam
     
     d->users[userId].roles.insert(roleName);
     Logger::info("RBACManager", QString("为用户 %1 分配角色: %2").arg(userId, roleName));
+    
+    // 清除该用户的缓存
+    locker.unlock();
+    clearUserCache(userId);
+    
     return true;
 }
 
@@ -359,6 +411,11 @@ bool RBACManager::revokeRoleFromUser(const QString& userId, const QString& roleN
     
     d->users[userId].roles.remove(roleName);
     Logger::info("RBACManager", QString("从用户 %1 撤销角色: %2").arg(userId, roleName));
+    
+    // 清除该用户的缓存
+    locker.unlock();
+    clearUserCache(userId);
+    
     return true;
 }
 
@@ -378,6 +435,11 @@ bool RBACManager::assignPermissionToUser(const QString& userId, const QString& p
     
     d->users[userId].directPermissions.insert(permissionName);
     Logger::info("RBACManager", QString("为用户 %1 分配权限: %2").arg(userId, permissionName));
+    
+    // 清除该用户的缓存
+    locker.unlock();
+    clearUserCache(userId);
+    
     emit permissionGranted(userId, permissionName);
     return true;
 }
@@ -392,6 +454,11 @@ bool RBACManager::revokePermissionFromUser(const QString& userId, const QString&
     
     d->users[userId].directPermissions.remove(permissionName);
     Logger::info("RBACManager", QString("从用户 %1 撤销权限: %2").arg(userId, permissionName));
+    
+    // 清除该用户的缓存
+    locker.unlock();
+    clearUserCache(userId);
+    
     emit permissionRevoked(userId, permissionName);
     return true;
 }
@@ -413,15 +480,51 @@ QStringList RBACManager::getAllUsers() const
 bool RBACManager::checkPermission(const QString& userId, const QString& permissionName) const
 {
     const auto* d = d_func();
+    
+    // 检查缓存
+    if (d->cacheEnabled) {
+        QString cacheKey = QString("%1:%2").arg(userId, permissionName);
+        QMutexLocker cacheLocker(&d->cacheMutex);
+        
+        if (d->permissionCache.contains(cacheKey)) {
+            PermissionCacheEntry& entry = d->permissionCache[cacheKey];
+            
+            // 检查是否过期
+            if (!entry.isExpired()) {
+                entry.updateAccessTime();
+                return entry.result;
+            } else {
+                // 过期，移除
+                d->permissionCache.remove(cacheKey);
+            }
+        }
+        cacheLocker.unlock();
+    }
+    
+    // 执行实际权限检查
     QMutexLocker locker(&d->mutex);
     
     if (!d->users.contains(userId)) {
         Logger::warning("RBACManager", QString("用户不存在: %1").arg(userId));
-        return false;
+        bool result = false;
+        
+        // 缓存结果（即使是false也缓存）
+        if (d->cacheEnabled) {
+            cachePermissionResult(userId, permissionName, result);
+        }
+        return result;
     }
     
     const User& user = d->users[userId];
-    return user.hasPermission(permissionName, d->roles);
+    bool result = user.hasPermission(permissionName, d->roles);
+    
+    // 缓存结果
+    if (d->cacheEnabled) {
+        locker.unlock();  // 释放主锁，避免死锁
+        cachePermissionResult(userId, permissionName, result);
+    }
+    
+    return result;
 }
 
 bool RBACManager::checkAnyPermission(const QString& userId, const QStringList& permissionNames) const
@@ -527,6 +630,188 @@ QVariantMap RBACManager::saveToConfig() const
     config["users"] = usersData;
     
     return config;
+}
+
+// 权限缓存管理
+void RBACManager::setCacheEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    d->cacheEnabled = enabled;
+    if (!enabled) {
+        d->permissionCache.clear();
+    }
+    Logger::info("RBACManager", QString("权限缓存%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool RBACManager::isCacheEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    return d->cacheEnabled;
+}
+
+void RBACManager::setCacheMaxSize(int maxSize)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    d->cacheMaxSize = qMax(1, maxSize);
+    
+    // 如果当前缓存超过最大大小，执行LRU淘汰
+    if (d->permissionCache.size() > d->cacheMaxSize) {
+        evictLRUEntries();
+    }
+    
+    Logger::info("RBACManager", QString("设置缓存最大大小: %1").arg(d->cacheMaxSize));
+}
+
+int RBACManager::getCacheMaxSize() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    return d->cacheMaxSize;
+}
+
+void RBACManager::setCacheTTL(int seconds)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    d->cacheTTLSeconds = qMax(1, seconds);
+    Logger::info("RBACManager", QString("设置缓存TTL: %1秒").arg(d->cacheTTLSeconds));
+}
+
+int RBACManager::getCacheTTL() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    return d->cacheTTLSeconds;
+}
+
+void RBACManager::clearCache()
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    int size = d->permissionCache.size();
+    d->permissionCache.clear();
+    Logger::info("RBACManager", QString("清除权限缓存，共%1条记录").arg(size));
+}
+
+void RBACManager::clearUserCache(const QString& userId)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    
+    QString prefix = userId + ":";
+    QList<QString> keysToRemove;
+    
+    for (auto it = d->permissionCache.begin(); it != d->permissionCache.end(); ++it) {
+        if (it.key().startsWith(prefix)) {
+            keysToRemove.append(it.key());
+        }
+    }
+    
+    for (const QString& key : keysToRemove) {
+        d->permissionCache.remove(key);
+    }
+    
+    if (!keysToRemove.isEmpty()) {
+        Logger::info("RBACManager", QString("清除用户 %1 的缓存，共%2条记录").arg(userId).arg(keysToRemove.size()));
+    }
+}
+
+int RBACManager::getCacheSize() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->cacheMutex);
+    
+    // 清理过期条目
+    QList<QString> expiredKeys;
+    for (auto it = d->permissionCache.begin(); it != d->permissionCache.end(); ++it) {
+        if (it.value().isExpired()) {
+            expiredKeys.append(it.key());
+        }
+    }
+    for (const QString& key : expiredKeys) {
+        d->permissionCache.remove(key);
+    }
+    
+    return d->permissionCache.size();
+}
+
+// 私有辅助函数：缓存权限检查结果
+void RBACManager::cachePermissionResult(const QString& userId, const QString& permissionName, bool result) const
+{
+    auto* d = const_cast<Private*>(d_func());
+    QMutexLocker locker(&d->cacheMutex);
+    
+    if (!d->cacheEnabled) {
+        return;
+    }
+    
+    QString cacheKey = QString("%1:%2").arg(userId, permissionName);
+    QDateTime expireTime = QDateTime::currentDateTime().addSecs(d->cacheTTLSeconds);
+    
+    // 如果缓存已满，执行LRU淘汰
+    if (d->permissionCache.size() >= d->cacheMaxSize && !d->permissionCache.contains(cacheKey)) {
+        evictLRUEntries();
+    }
+    
+    // 添加或更新缓存
+    d->permissionCache[cacheKey] = PermissionCacheEntry(result, expireTime);
+}
+
+// 私有辅助函数：LRU淘汰
+void RBACManager::evictLRUEntries() const
+{
+    auto* d = const_cast<Private*>(d_func());
+    
+    if (d->permissionCache.size() <= d->cacheMaxSize) {
+        return;
+    }
+    
+    // 需要淘汰的数量
+    int toEvict = d->permissionCache.size() - d->cacheMaxSize + 1;
+    
+    // 按访问时间排序，淘汰最久未访问的
+    QList<QPair<QDateTime, QString>> entries;
+    for (auto it = d->permissionCache.begin(); it != d->permissionCache.end(); ++it) {
+        entries.append(qMakePair(it.value().accessTime, it.key()));
+    }
+    
+    // 按访问时间升序排序（最早的在前）
+    std::sort(entries.begin(), entries.end(), 
+              [](const QPair<QDateTime, QString>& a, const QPair<QDateTime, QString>& b) {
+                  return a.first < b.first;
+              });
+    
+    // 淘汰最久未访问的条目
+    for (int i = 0; i < toEvict && i < entries.size(); ++i) {
+        d->permissionCache.remove(entries[i].second);
+    }
+}
+
+// 私有辅助函数：清除特定权限的缓存
+void RBACManager::clearPermissionCache(const QString& permissionName) const
+{
+    auto* d = const_cast<Private*>(d_func());
+    QMutexLocker locker(&d->cacheMutex);
+    
+    QString suffix = ":" + permissionName;
+    QList<QString> keysToRemove;
+    
+    for (auto it = d->permissionCache.begin(); it != d->permissionCache.end(); ++it) {
+        if (it.key().endsWith(suffix)) {
+            keysToRemove.append(it.key());
+        }
+    }
+    
+    for (const QString& key : keysToRemove) {
+        d->permissionCache.remove(key);
+    }
+    
+    if (!keysToRemove.isEmpty()) {
+        Logger::debug("RBACManager", QString("清除权限 %1 的缓存，共%2条记录").arg(permissionName).arg(keysToRemove.size()));
+    }
 }
 
 } // namespace Core

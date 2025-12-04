@@ -123,6 +123,17 @@ public:
     bool checkAnyPermission(const QString& userId, const QStringList& permissionNames) const;
     bool checkAllPermissions(const QString& userId, const QStringList& permissionNames) const;
     
+    // 权限缓存管理
+    void setCacheEnabled(bool enabled);
+    bool isCacheEnabled() const;
+    void setCacheMaxSize(int maxSize);
+    int getCacheMaxSize() const;
+    void setCacheTTL(int seconds);
+    int getCacheTTL() const;
+    void clearCache();
+    void clearUserCache(const QString& userId);
+    int getCacheSize() const;
+    
     // 批量操作
     bool loadFromConfig(const QVariantMap& config);
     QVariantMap saveToConfig() const;
@@ -145,6 +156,11 @@ private:
     
     inline Private* d_func() { return d; }
     inline const Private* d_func() const { return d; }
+    
+    // 私有辅助函数
+    void cachePermissionResult(const QString& userId, const QString& permissionName, bool result) const;
+    void evictLRUEntries() const;
+    void clearPermissionCache(const QString& permissionName) const;
     
     friend class Private;
 };
