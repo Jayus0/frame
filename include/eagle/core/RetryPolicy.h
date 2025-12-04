@@ -10,6 +10,9 @@
 namespace Eagle {
 namespace Core {
 
+// Forward declaration
+class RetryPolicyPrivate;
+
 /**
  * @brief 重试策略类型
  */
@@ -87,7 +90,6 @@ signals:
 private:
     Q_DISABLE_COPY(RetryPolicy)
     
-    class RetryPolicyPrivate;
     RetryPolicyPrivate* d;
     
     inline RetryPolicyPrivate* d_func() { return d; }
