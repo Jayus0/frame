@@ -2112,8 +2112,7 @@ void registerApiRoutes(ApiServer* server) {
             return;
         }
         
-        QUrlQuery query(req.query);
-        int limit = query.queryItemValue("limit").toInt();
+        int limit = req.queryParams.value("limit").toInt();
         
         QList<ConfigVersion> versions = configManager->getConfigVersions(limit);
         
