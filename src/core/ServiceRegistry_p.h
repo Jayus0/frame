@@ -15,8 +15,11 @@ public:
     QMap<QString, QList<ServiceDescriptor>> services; // serviceName -> versions
     QMap<QString, QObject*> providers; // serviceName+version -> provider
     QMap<QString, CircuitBreaker*> circuitBreakers; // serviceName -> circuitBreaker
+    QMap<QString, QPair<int, int>> serviceRateLimits; // serviceName -> (maxRequests, windowMs)
     int defaultTimeoutMs = 5000;  // 默认超时时间
     bool enableCircuitBreaker = true;  // 是否启用熔断器
+    bool enablePermissionCheck = false;  // 是否启用权限检查
+    bool enableRateLimit = false;  // 是否启用限流
     mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
 };
 

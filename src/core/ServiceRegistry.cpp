@@ -378,5 +378,44 @@ void ServiceRegistry::setCircuitBreakerConfig(const QString& serviceName, const 
     }
 }
 
+void ServiceRegistry::setPermissionCheckEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->enablePermissionCheck = enabled;
+    Logger::info("ServiceRegistry", QString("权限检查%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool ServiceRegistry::isPermissionCheckEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->enablePermissionCheck;
+}
+
+void ServiceRegistry::setRateLimitEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->enableRateLimit = enabled;
+    Logger::info("ServiceRegistry", QString("限流%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool ServiceRegistry::isRateLimitEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->enableRateLimit;
+}
+
+void ServiceRegistry::setServiceRateLimit(const QString& serviceName, int maxRequests, int windowMs)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->serviceRateLimits[serviceName] = qMakePair(maxRequests, windowMs);
+    Logger::info("ServiceRegistry", QString("设置服务限流: %1 - %2次/%3ms")
+        .arg(serviceName).arg(maxRequests).arg(windowMs));
+}
+
 } // namespace Core
 } // namespace Eagle
