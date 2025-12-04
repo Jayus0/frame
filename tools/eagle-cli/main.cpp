@@ -19,6 +19,7 @@
 #include "eagle/core/HotReloadManager.h"
 #include "eagle/core/FailoverManager.h"
 #include "eagle/core/DiagnosticManager.h"
+#include "eagle/core/ResourceMonitor.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -64,6 +65,9 @@ public:
         QCommandLineOption diagnosticOption("diagnostic", "Diagnostic tools");
         parser.addOption(diagnosticOption);
         
+        QCommandLineOption resourceOption("resource", "Resource monitoring");
+        parser.addOption(resourceOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -87,6 +91,8 @@ public:
             return handleFailover(args.mid(1));
         } else if (parser.isSet(diagnosticOption) || command == "diagnostic") {
             return handleDiagnostic(args.mid(1));
+        } else if (parser.isSet(resourceOption) || command == "resource") {
+            return handleResource(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -987,6 +993,103 @@ private:
         } else {
             std::cerr << "Unknown diagnostic command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli diagnostic stacktrace|memory|deadlock'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleResource(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli resource <show|set|events> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ResourceMonitor* resourceMonitor = framework->resourceMonitor();
+        if (!resourceMonitor) {
+            std::cerr << "Error: ResourceMonitor not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "show") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli resource show <plugin-id>" << std::endl;
+                return 1;
+            }
+            
+            QString pluginId = args[1];
+            Eagle::Core::ResourceUsage usage = resourceMonitor->getResourceUsage(pluginId);
+            Eagle::Core::ResourceLimits limits = resourceMonitor->getResourceLimits(pluginId);
+            
+            if (!usage.isValid()) {
+                std::cerr << "Error: Plugin not found or not monitored: " << pluginId.toStdString() << std::endl;
+                return 1;
+            }
+            
+            std::cout << "Resource Usage for " << pluginId.toStdString() << ":" << std::endl;
+            std::cout << "  Memory: " << (usage.memoryBytes / 1024 / 1024) << " MB" << std::endl;
+            std::cout << "  CPU: " << usage.cpuPercent << "%" << std::endl;
+            std::cout << "  Threads: " << usage.threadCount << std::endl;
+            std::cout << "  Last Update: " << usage.lastUpdate.toString(Qt::ISODate).toStdString() << std::endl;
+            std::cout << std::endl;
+            std::cout << "Resource Limits:" << std::endl;
+            std::cout << "  Max Memory: " << (limits.maxMemoryMB < 0 ? "Unlimited" : QString::number(limits.maxMemoryMB).append(" MB").toStdString()) << std::endl;
+            std::cout << "  Max CPU: " << (limits.maxCpuPercent < 0 ? "Unlimited" : QString::number(limits.maxCpuPercent).append("%").toStdString()) << std::endl;
+            std::cout << "  Max Threads: " << (limits.maxThreads < 0 ? "Unlimited" : QString::number(limits.maxThreads).toStdString()) << std::endl;
+            std::cout << "  Enforcement: " << (limits.enforceLimits ? "Enabled" : "Disabled") << std::endl;
+            std::cout << "  Limit Exceeded: " << (resourceMonitor->isResourceLimitExceeded(pluginId) ? "Yes" : "No") << std::endl;
+            return 0;
+        } else if (subCommand == "set") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli resource set <plugin-id> [--memory MB] [--cpu PERCENT] [--threads COUNT] [--enforce]" << std::endl;
+                return 1;
+            }
+            
+            QString pluginId = args[1];
+            Eagle::Core::ResourceLimits limits;
+            
+            for (int i = 2; i < args.size(); ++i) {
+                if (args[i] == "--memory" && i + 1 < args.size()) {
+                    limits.maxMemoryMB = args[++i].toInt();
+                } else if (args[i] == "--cpu" && i + 1 < args.size()) {
+                    limits.maxCpuPercent = args[++i].toInt();
+                } else if (args[i] == "--threads" && i + 1 < args.size()) {
+                    limits.maxThreads = args[++i].toInt();
+                } else if (args[i] == "--enforce") {
+                    limits.enforceLimits = true;
+                }
+            }
+            
+            resourceMonitor->setResourceLimits(pluginId, limits);
+            std::cout << "Resource limits set for " << pluginId.toStdString() << std::endl;
+            return 0;
+        } else if (subCommand == "events") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli resource events <plugin-id> [limit]" << std::endl;
+                return 1;
+            }
+            
+            QString pluginId = args[1];
+            int limit = args.size() > 2 ? args[2].toInt() : 10;
+            
+            QList<Eagle::Core::ResourceLimitExceeded> events = resourceMonitor->getLimitExceededEvents(pluginId, limit);
+            std::cout << "Resource limit exceeded events for " << pluginId.toStdString() << " (" << events.size() << "):" << std::endl;
+            for (const Eagle::Core::ResourceLimitExceeded& event : events) {
+                std::cout << "  " << event.timestamp.toString(Qt::ISODate).toStdString() 
+                          << " [" << event.resourceType.toStdString() << "] "
+                          << event.currentValue << " > " << event.limitValue << std::endl;
+            }
+            return 0;
+        } else {
+            std::cerr << "Unknown resource command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli resource show|set|events'" << std::endl;
             return 1;
         }
     }

@@ -3,6 +3,7 @@ set(PLUGIN_SOURCES
     plugin/PluginManager.cpp
     plugin/PluginSignature.cpp
     plugin/PluginIsolation.cpp
+    plugin/ResourceMonitor.cpp
 )
 
 # 服务模块
@@ -93,6 +94,7 @@ set(HEADERS
     ../../include/eagle/core/Logger.h
     ../../include/eagle/core/Framework.h
     ../../include/eagle/core/PluginSignature.h
+    ../../include/eagle/core/ResourceMonitor.h
     ../../include/eagle/core/CircuitBreaker.h
     ../../include/eagle/core/ConfigEncryption.h
     ../../include/eagle/core/PluginIsolation.h

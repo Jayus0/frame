@@ -74,6 +74,7 @@ bool Framework::initialize(const QString& configPath)
     d->hotReloadManager = new HotReloadManager(d->pluginManager, this);
     d->failoverManager = new FailoverManager(d->serviceRegistry, this);
     d->diagnosticManager = new DiagnosticManager(this);
+    d->resourceMonitor = new ResourceMonitor(this);
     
     // 配置ServiceRegistry使用RBAC和限流器
     if (d->serviceRegistry) {
@@ -207,6 +208,9 @@ void Framework::shutdown()
     delete d->diagnosticManager;
     d->diagnosticManager = nullptr;
     
+    delete d->resourceMonitor;
+    d->resourceMonitor = nullptr;
+    
     delete d->alertSystem;
     d->alertSystem = nullptr;
     
@@ -326,6 +330,11 @@ FailoverManager* Framework::failoverManager() const
 DiagnosticManager* Framework::diagnosticManager() const
 {
     return d->diagnosticManager;
+}
+
+ResourceMonitor* Framework::resourceMonitor() const
+{
+    return d->resourceMonitor;
 }
 
 QString Framework::version() const

@@ -15,6 +15,7 @@
 #include "eagle/core/HotReloadManager.h"
 #include "eagle/core/FailoverManager.h"
 #include "eagle/core/DiagnosticManager.h"
+#include "eagle/core/ResourceMonitor.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -1250,6 +1251,154 @@ void registerApiRoutes(ApiServer* server) {
         QJsonObject data;
         data["deadlocks"] = deadlockArray;
         data["count"] = deadlockArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // ============================================================================
+    // 资源监控API
+    // ============================================================================
+    
+    // GET /api/v1/plugins/{id}/resources - 获取插件资源使用情况
+    server->get("/api/v1/plugins/{id}/resources", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.resource.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.resource.view");
+            return;
+        }
+        
+        ResourceMonitor* resourceMonitor = framework->resourceMonitor();
+        if (!resourceMonitor) {
+            resp.setError(500, "ResourceMonitor not available");
+            return;
+        }
+        
+        QString pluginId = req.pathParams.value("id");
+        if (pluginId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing plugin ID");
+            return;
+        }
+        
+        ResourceUsage usage = resourceMonitor->getResourceUsage(pluginId);
+        ResourceLimits limits = resourceMonitor->getResourceLimits(pluginId);
+        
+        QJsonObject data;
+        data["pluginId"] = pluginId;
+        
+        QJsonObject usageObj;
+        usageObj["memoryBytes"] = usage.memoryBytes;
+        usageObj["memoryMB"] = usage.memoryBytes / 1024 / 1024;
+        usageObj["cpuPercent"] = usage.cpuPercent;
+        usageObj["threadCount"] = usage.threadCount;
+        usageObj["lastUpdate"] = usage.lastUpdate.toString(Qt::ISODate);
+        data["usage"] = usageObj;
+        
+        QJsonObject limitsObj;
+        limitsObj["maxMemoryMB"] = limits.maxMemoryMB;
+        limitsObj["maxCpuPercent"] = limits.maxCpuPercent;
+        limitsObj["maxThreads"] = limits.maxThreads;
+        limitsObj["enforceLimits"] = limits.enforceLimits;
+        data["limits"] = limitsObj;
+        
+        data["limitExceeded"] = resourceMonitor->isResourceLimitExceeded(pluginId);
+        
+        resp.setSuccess(data);
+    });
+    
+    // POST /api/v1/plugins/{id}/resources/limits - 设置插件资源限制
+    server->post("/api/v1/plugins/{id}/resources/limits", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.resource.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.resource.manage");
+            return;
+        }
+        
+        ResourceMonitor* resourceMonitor = framework->resourceMonitor();
+        if (!resourceMonitor) {
+            resp.setError(500, "ResourceMonitor not available");
+            return;
+        }
+        
+        QString pluginId = req.pathParams.value("id");
+        if (pluginId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing plugin ID");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        ResourceLimits limits;
+        limits.maxMemoryMB = body.value("maxMemoryMB").toInt(-1);
+        limits.maxCpuPercent = body.value("maxCpuPercent").toInt(-1);
+        limits.maxThreads = body.value("maxThreads").toInt(-1);
+        limits.enforceLimits = body.value("enforceLimits").toBool(false);
+        
+        resourceMonitor->setResourceLimits(pluginId, limits);
+        
+        QJsonObject data;
+        data["pluginId"] = pluginId;
+        data["limits"] = QJsonObject::fromVariantMap(QVariantMap({
+            {"maxMemoryMB", limits.maxMemoryMB},
+            {"maxCpuPercent", limits.maxCpuPercent},
+            {"maxThreads", limits.maxThreads},
+            {"enforceLimits", limits.enforceLimits}
+        }));
+        
+        resp.setSuccess(data);
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/plugins/{id}/resources/limits", pluginId, AuditLevel::Info, true);
+        }
+    });
+    
+    // GET /api/v1/plugins/{id}/resources/events - 获取资源超限事件
+    server->get("/api/v1/plugins/{id}/resources/events", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.resource.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.resource.view");
+            return;
+        }
+        
+        ResourceMonitor* resourceMonitor = framework->resourceMonitor();
+        if (!resourceMonitor) {
+            resp.setError(500, "ResourceMonitor not available");
+            return;
+        }
+        
+        QString pluginId = req.pathParams.value("id");
+        if (pluginId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing plugin ID");
+            return;
+        }
+        
+        int limit = req.queryParams.value("limit", "10").toInt();
+        QList<ResourceLimitExceeded> events = resourceMonitor->getLimitExceededEvents(pluginId, limit);
+        
+        QJsonArray eventArray;
+        for (const ResourceLimitExceeded& event : events) {
+            QJsonObject eventObj;
+            eventObj["pluginId"] = event.pluginId;
+            eventObj["resourceType"] = event.resourceType;
+            eventObj["currentValue"] = event.currentValue;
+            eventObj["limitValue"] = event.limitValue;
+            eventObj["timestamp"] = event.timestamp.toString(Qt::ISODate);
+            eventArray.append(eventObj);
+        }
+        
+        QJsonObject data;
+        data["events"] = eventArray;
+        data["count"] = eventArray.size();
         resp.setSuccess(data);
     });
 }

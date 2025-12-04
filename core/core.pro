@@ -10,7 +10,8 @@ TEMPLATE = lib
 PLUGIN_SOURCES += \
     ../src/core/plugin/PluginManager.cpp \
     ../src/core/plugin/PluginSignature.cpp \
-    ../src/core/plugin/PluginIsolation.cpp
+    ../src/core/plugin/PluginIsolation.cpp \
+    ../src/core/plugin/ResourceMonitor.cpp
 
 # 服务模块
 SERVICE_SOURCES += \
@@ -95,6 +96,8 @@ HEADERS += \
     ../include/eagle/core/Framework.h \
     ../src/core/framework/Framework_p.h \
     ../include/eagle/core/PluginSignature.h \
+    ../include/eagle/core/ResourceMonitor.h \
+    ../src/core/plugin/ResourceMonitor_p.h \
     ../include/eagle/core/CircuitBreaker.h \
     ../include/eagle/core/ConfigEncryption.h \
     ../include/eagle/core/PluginIsolation.h \

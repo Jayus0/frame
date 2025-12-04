@@ -1,8 +1,10 @@
 #include "eagle/core/PluginIsolation.h"
 #include "eagle/core/Logger.h"
+#include "eagle/core/ResourceMonitor.h"
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
 #include <QtCore/QMap>
+#include <QtCore/QCoreApplication>
 #include <exception>
 
 namespace Eagle {
@@ -21,6 +23,15 @@ struct PluginIsolationData {
 
 static QMap<QString, PluginIsolationData> s_pluginData;
 static QMutex s_mutex;
+static ResourceMonitor* s_resourceMonitor = nullptr;
+
+// 初始化资源监控器
+static void initResourceMonitor()
+{
+    if (!s_resourceMonitor) {
+        s_resourceMonitor = new ResourceMonitor(QCoreApplication::instance());
+    }
+}
 
 bool PluginIsolation::executeIsolated(const QString& pluginId, std::function<bool()> func)
 {
@@ -66,10 +77,21 @@ bool PluginIsolation::executeIsolated(const QString& pluginId, std::function<boo
 
 void PluginIsolation::setResourceLimits(const QString& pluginId, int maxMemoryMB, int maxCpuPercent)
 {
+    initResourceMonitor();
+    
     QMutexLocker locker(&s_mutex);
     PluginIsolationData& data = s_pluginData[pluginId];
     data.limits.maxMemoryMB = maxMemoryMB;
     data.limits.maxCpuPercent = maxCpuPercent;
+    
+    // 同步到ResourceMonitor
+    if (s_resourceMonitor) {
+        ResourceLimits limits;
+        limits.maxMemoryMB = maxMemoryMB;
+        limits.maxCpuPercent = maxCpuPercent;
+        limits.enforceLimits = true;
+        s_resourceMonitor->setResourceLimits(pluginId, limits);
+    }
     
     Logger::info("PluginIsolation", QString("设置插件资源限制: %1 (内存: %2MB, CPU: %3%)")
         .arg(pluginId)
@@ -79,6 +101,8 @@ void PluginIsolation::setResourceLimits(const QString& pluginId, int maxMemoryMB
 
 bool PluginIsolation::checkResourceLimits(const QString& pluginId)
 {
+    initResourceMonitor();
+    
     QMutexLocker locker(&s_mutex);
     if (!s_pluginData.contains(pluginId)) {
         return true;  // 没有限制
@@ -87,14 +111,16 @@ bool PluginIsolation::checkResourceLimits(const QString& pluginId)
     const PluginIsolationData& data = s_pluginData[pluginId];
     const ResourceLimits& limits = data.limits;
     
-    // 简化实现：实际应该检查进程的实际资源使用
-    // 这里只是占位实现
-    if (limits.maxMemoryMB > 0) {
-        // TODO: 检查内存使用
+    // 如果没有限制，直接返回
+    if (limits.maxMemoryMB < 0 && limits.maxCpuPercent < 0) {
+        return true;
     }
     
-    if (limits.maxCpuPercent > 0) {
-        // TODO: 检查CPU使用
+    locker.unlock();
+    
+    // 使用ResourceMonitor检查资源限制
+    if (s_resourceMonitor) {
+        return !s_resourceMonitor->isResourceLimitExceeded(pluginId);
     }
     
     return true;
