@@ -18,6 +18,7 @@
 #include "eagle/core/ResourceMonitor.h"
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
+#include "eagle/core/PluginSignature.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -1724,6 +1725,174 @@ void registerApiRoutes(ApiServer* server) {
             result["message"] = "未设置Schema路径";
         }
         
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/plugins/sign - 为插件生成签名
+    server->post("/api/v1/plugins/sign", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.sign")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.sign");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString pluginPath = body.value("pluginPath").toString();
+        QString privateKeyPath = body.value("privateKeyPath").toString();
+        QString certificatePath = body.value("certificatePath").toString();
+        QString outputPath = body.value("outputPath").toString();
+        QString algorithmStr = body.value("algorithm").toString("RSA-SHA256");
+        
+        if (pluginPath.isEmpty() || privateKeyPath.isEmpty() || outputPath.isEmpty()) {
+            resp.setError(400, "Bad Request", "pluginPath, privateKeyPath, and outputPath are required");
+            return;
+        }
+        
+        Core::SignatureAlgorithm algorithm = Core::SignatureAlgorithm::RSA_SHA256;
+        if (algorithmStr == "RSA-SHA512") {
+            algorithm = Core::SignatureAlgorithm::RSA_SHA512;
+        } else if (algorithmStr == "SHA256") {
+            algorithm = Core::SignatureAlgorithm::SHA256;
+        }
+        
+        bool success = Core::PluginSignatureVerifier::sign(pluginPath, privateKeyPath, certificatePath, outputPath, algorithm);
+        
+        if (success) {
+            QJsonObject result;
+            result["message"] = "插件签名成功";
+            result["outputPath"] = outputPath;
+            result["algorithm"] = algorithmStr;
+            resp.setSuccess(result);
+        } else {
+            resp.setError(500, "签名失败", "无法生成插件签名");
+        }
+    });
+    
+    // POST /api/v1/plugins/verify - 验证插件签名
+    server->post("/api/v1/plugins/verify", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.verify")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.verify");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString pluginPath = body.value("pluginPath").toString();
+        QString signaturePath = body.value("signaturePath").toString();
+        QString crlPath = body.value("crlPath").toString();  // 撤销列表路径
+        
+        if (pluginPath.isEmpty()) {
+            resp.setError(400, "Bad Request", "pluginPath is required");
+            return;
+        }
+        
+        if (signaturePath.isEmpty()) {
+            signaturePath = Core::PluginSignatureVerifier::findSignatureFile(pluginPath);
+            if (signaturePath.isEmpty()) {
+                resp.setError(400, "Bad Request", "签名文件不存在");
+                return;
+            }
+        }
+        
+        Core::PluginSignature signature = Core::PluginSignatureVerifier::loadFromFile(signaturePath);
+        if (!signature.isValid()) {
+            resp.setError(400, "Bad Request", "无法加载签名文件");
+            return;
+        }
+        
+        // 检查撤销列表
+        if (!crlPath.isEmpty() && Core::PluginSignatureVerifier::isRevoked(signature, crlPath)) {
+            resp.setError(400, "Signature Revoked", "签名已被撤销");
+            return;
+        }
+        
+        bool valid = Core::PluginSignatureVerifier::verify(pluginPath, signature);
+        
+        QJsonObject result;
+        result["valid"] = valid;
+        result["signer"] = signature.signer;
+        result["algorithm"] = (signature.algorithm == Core::SignatureAlgorithm::RSA_SHA256 ? "RSA-SHA256" :
+                              signature.algorithm == Core::SignatureAlgorithm::RSA_SHA512 ? "RSA-SHA512" : "SHA256");
+        result["signTime"] = signature.signTime.toString(Qt::ISODate);
+        
+        if (signature.certificate.isValid()) {
+            QJsonObject certObj;
+            certObj["subject"] = signature.certificate.subject;
+            certObj["issuer"] = signature.certificate.issuer;
+            certObj["validFrom"] = signature.certificate.validFrom.toString(Qt::ISODate);
+            certObj["validTo"] = signature.certificate.validTo.toString(Qt::ISODate);
+            certObj["serialNumber"] = signature.certificate.serialNumber;
+            result["certificate"] = certObj;
+        }
+        
+        if (valid) {
+            resp.setSuccess(result);
+        } else {
+            resp.setError(400, "Verification Failed", "签名验证失败", result);
+        }
+    });
+    
+    // GET /api/v1/plugins/certificates/trusted - 获取受信任的根证书列表
+    server->get("/api/v1/plugins/certificates/trusted", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.certificate.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.certificate.view");
+            return;
+        }
+        
+        QStringList trustedRoots = Core::PluginSignatureVerifier::getTrustedRootCertificates();
+        
+        QJsonArray rootsArray;
+        for (const QString& rootPath : trustedRoots) {
+            Core::CertificateInfo cert = Core::PluginSignatureVerifier::loadCertificate(rootPath);
+            QJsonObject certObj;
+            certObj["path"] = rootPath;
+            certObj["subject"] = cert.subject;
+            certObj["issuer"] = cert.issuer;
+            certObj["valid"] = cert.isValid();
+            rootsArray.append(certObj);
+        }
+        
+        QJsonObject result;
+        result["trustedRoots"] = rootsArray;
+        result["count"] = rootsArray.size();
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/plugins/certificates/trusted - 设置受信任的根证书
+    server->post("/api/v1/plugins/certificates/trusted", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "plugin.certificate.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: plugin.certificate.manage");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QJsonArray rootsArray = body.value("trustedRoots").toArray();
+        
+        QStringList rootPaths;
+        for (const QJsonValue& val : rootsArray) {
+            rootPaths.append(val.toString());
+        }
+        
+        Core::PluginSignatureVerifier::setTrustedRootCertificates(rootPaths);
+        
+        QJsonObject result;
+        result["message"] = "受信任的根证书已设置";
+        result["count"] = rootPaths.size();
         resp.setSuccess(result);
     });
 }

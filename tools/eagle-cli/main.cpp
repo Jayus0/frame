@@ -22,6 +22,7 @@
 #include "eagle/core/ResourceMonitor.h"
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
+#include "eagle/core/PluginSignature.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -79,6 +80,9 @@ public:
         QCommandLineOption schemaOption("schema", "Schema validation");
         parser.addOption(schemaOption);
         
+        QCommandLineOption signatureOption("signature", "Plugin signature management");
+        parser.addOption(signatureOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -110,6 +114,8 @@ public:
             return handleEncryption(args.mid(1));
         } else if (parser.isSet(schemaOption) || command == "schema") {
             return handleSchema(args.mid(1));
+        } else if (parser.isSet(signatureOption) || command == "signature") {
+            return handleSignature(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1352,6 +1358,154 @@ private:
         } else {
             std::cerr << "Unknown schema command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli schema validate|load|info'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleSignature(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli signature <sign|verify|certificates> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "sign") {
+            if (args.size() < 4) {
+                std::cerr << "Usage: eagle-cli signature sign <plugin-path> <private-key-path> <output-path> [certificate-path] [algorithm]" << std::endl;
+                return 1;
+            }
+            
+            QString pluginPath = args[1];
+            QString privateKeyPath = args[2];
+            QString outputPath = args[3];
+            QString certificatePath = args.size() > 4 ? args[4] : QString();
+            QString algorithmStr = args.size() > 5 ? args[5] : "RSA-SHA256";
+            
+            Eagle::Core::SignatureAlgorithm algorithm = Eagle::Core::SignatureAlgorithm::RSA_SHA256;
+            if (algorithmStr == "RSA-SHA512") {
+                algorithm = Eagle::Core::SignatureAlgorithm::RSA_SHA512;
+            } else if (algorithmStr == "SHA256") {
+                algorithm = Eagle::Core::SignatureAlgorithm::SHA256;
+            }
+            
+            bool success = Eagle::Core::PluginSignatureVerifier::sign(pluginPath, privateKeyPath, certificatePath, outputPath, algorithm);
+            if (success) {
+                std::cout << "Plugin signed successfully: " << outputPath.toStdString() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: Failed to sign plugin" << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "verify") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli signature verify <plugin-path> [signature-path] [crl-path]" << std::endl;
+                return 1;
+            }
+            
+            QString pluginPath = args[1];
+            QString signaturePath = args.size() > 2 ? args[2] : QString();
+            QString crlPath = args.size() > 3 ? args[3] : QString();
+            
+            if (signaturePath.isEmpty()) {
+                signaturePath = Eagle::Core::PluginSignatureVerifier::findSignatureFile(pluginPath);
+                if (signaturePath.isEmpty()) {
+                    std::cerr << "Error: Signature file not found" << std::endl;
+                    return 1;
+                }
+            }
+            
+            Eagle::Core::PluginSignature signature = Eagle::Core::PluginSignatureVerifier::loadFromFile(signaturePath);
+            if (!signature.isValid()) {
+                std::cerr << "Error: Invalid signature file" << std::endl;
+                return 1;
+            }
+            
+            // 检查撤销列表
+            if (!crlPath.isEmpty() && Eagle::Core::PluginSignatureVerifier::isRevoked(signature, crlPath)) {
+                std::cerr << "Error: Signature has been revoked" << std::endl;
+                return 1;
+            }
+            
+            bool valid = Eagle::Core::PluginSignatureVerifier::verify(pluginPath, signature);
+            if (valid) {
+                std::cout << "Signature verification: PASSED" << std::endl;
+                std::cout << "  Signer: " << signature.signer.toStdString() << std::endl;
+                std::cout << "  Algorithm: " << (signature.algorithm == Eagle::Core::SignatureAlgorithm::RSA_SHA256 ? "RSA-SHA256" :
+                              signature.algorithm == Eagle::Core::SignatureAlgorithm::RSA_SHA512 ? "RSA-SHA512" : "SHA256").toStdString() << std::endl;
+                std::cout << "  Sign Time: " << signature.signTime.toString(Qt::ISODate).toStdString() << std::endl;
+                if (signature.certificate.isValid()) {
+                    std::cout << "  Certificate Subject: " << signature.certificate.subject.toStdString() << std::endl;
+                    std::cout << "  Certificate Issuer: " << signature.certificate.issuer.toStdString() << std::endl;
+                }
+                return 0;
+            } else {
+                std::cerr << "Signature verification: FAILED" << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "certificates") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli signature certificates <list|add|remove> [options]" << std::endl;
+                return 1;
+            }
+            
+            QString certCommand = args[1];
+            
+            if (certCommand == "list") {
+                QStringList trustedRoots = Eagle::Core::PluginSignatureVerifier::getTrustedRootCertificates();
+                std::cout << "Trusted Root Certificates (" << trustedRoots.size() << "):" << std::endl;
+                for (const QString& rootPath : trustedRoots) {
+                    Eagle::Core::CertificateInfo cert = Eagle::Core::PluginSignatureVerifier::loadCertificate(rootPath);
+                    std::cout << "  " << rootPath.toStdString() << std::endl;
+                    if (cert.isValid()) {
+                        std::cout << "    Subject: " << cert.subject.toStdString() << std::endl;
+                        std::cout << "    Issuer: " << cert.issuer.toStdString() << std::endl;
+                    }
+                }
+                return 0;
+            } else if (certCommand == "add") {
+                if (args.size() < 3) {
+                    std::cerr << "Usage: eagle-cli signature certificates add <certificate-path>" << std::endl;
+                    return 1;
+                }
+                
+                QString certPath = args[2];
+                QStringList trustedRoots = Eagle::Core::PluginSignatureVerifier::getTrustedRootCertificates();
+                if (!trustedRoots.contains(certPath)) {
+                    trustedRoots.append(certPath);
+                    Eagle::Core::PluginSignatureVerifier::setTrustedRootCertificates(trustedRoots);
+                    std::cout << "Certificate added: " << certPath.toStdString() << std::endl;
+                } else {
+                    std::cout << "Certificate already in trusted list" << std::endl;
+                }
+                return 0;
+            } else if (certCommand == "remove") {
+                if (args.size() < 3) {
+                    std::cerr << "Usage: eagle-cli signature certificates remove <certificate-path>" << std::endl;
+                    return 1;
+                }
+                
+                QString certPath = args[2];
+                QStringList trustedRoots = Eagle::Core::PluginSignatureVerifier::getTrustedRootCertificates();
+                trustedRoots.removeAll(certPath);
+                Eagle::Core::PluginSignatureVerifier::setTrustedRootCertificates(trustedRoots);
+                std::cout << "Certificate removed: " << certPath.toStdString() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Unknown certificate command: " << certCommand.toStdString() << std::endl;
+                std::cerr << "Use 'eagle-cli signature certificates list|add|remove'" << std::endl;
+                return 1;
+            }
+        } else {
+            std::cerr << "Unknown signature command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli signature sign|verify|certificates'" << std::endl;
             return 1;
         }
     }
