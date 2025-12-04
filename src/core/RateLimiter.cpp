@@ -31,6 +31,15 @@ struct TokenBucket {
     QDateTime lastRefill;  // 上次补充时间
     int refillRate;        // 补充速率（令牌/秒）
     
+    // 默认构造函数（QMap需要）
+    TokenBucket()
+        : tokens(0)
+        , capacity(0)
+        , refillRate(0)
+    {
+        lastRefill = QDateTime::currentDateTime();
+    }
+    
     TokenBucket(int maxRequests, int windowMs) 
         : tokens(maxRequests)
         , capacity(maxRequests)
@@ -63,6 +72,12 @@ struct SlidingWindow {
     QList<QDateTime> requests;  // 请求时间列表
     int maxRequests;
     int windowMs;
+    
+    // 默认构造函数（QMap需要）
+    SlidingWindow()
+        : maxRequests(0)
+        , windowMs(0)
+    {}
     
     SlidingWindow(int maxRequests, int windowMs)
         : maxRequests(maxRequests)
