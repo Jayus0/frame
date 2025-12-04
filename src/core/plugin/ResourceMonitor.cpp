@@ -8,9 +8,26 @@
 #include <QtCore/QFile>
 #include <QtCore/QTextStream>
 #include <QtCore/QRegExp>
+#include <QtCore/QElapsedTimer>
+#include <QtCore/QtMath>
 #ifdef __linux__
 #include <unistd.h>
 #include <sys/resource.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#include <tlhelp32.h>
+#pragma comment(lib, "psapi.lib")
+#endif
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/task_info.h>
+#include <mach/thread_info.h>
+#include <mach/mach_init.h>
+#include <mach/thread_act.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
 #endif
 #include <algorithm>
 
@@ -345,6 +362,19 @@ qint64 ResourceMonitor::getPluginMemoryUsage(const QString& pluginId) const
             }
         }
     }
+#elif defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    HANDLE hProcess = GetCurrentProcess();
+    if (GetProcessMemoryInfo(hProcess, (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+        return static_cast<qint64>(pmc.WorkingSetSize);  // 工作集大小（物理内存）
+    }
+#elif defined(__APPLE__)
+    struct task_basic_info info;
+    mach_msg_type_number_t size = TASK_BASIC_INFO_COUNT;
+    kern_return_t kerr = task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t)&info, &size);
+    if (kerr == KERN_SUCCESS) {
+        return static_cast<qint64>(info.resident_size);  // 常驻内存大小（字节）
+    }
 #endif
     
     // 其他平台或无法获取时，返回0
@@ -354,18 +384,124 @@ qint64 ResourceMonitor::getPluginMemoryUsage(const QString& pluginId) const
 double ResourceMonitor::getPluginCpuUsage(const QString& pluginId) const
 {
     Q_UNUSED(pluginId);
-    // 简化实现：获取进程CPU使用率
-    // 实际应该获取插件特定的CPU使用（需要插件进程分离或CPU跟踪）
+    // 获取进程CPU使用率
+    // 通过比较两次采样之间的CPU时间差来计算使用率
     
-    // 这里简化实现，实际应该跟踪CPU时间
-    // 可以通过/proc/self/stat获取进程CPU时间，然后计算使用率
+#ifdef __linux__
+    QFile statFile("/proc/self/stat");
+    if (statFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream stream(&statFile);
+        QString line = stream.readLine();
+        statFile.close();
+        
+        QStringList parts = line.split(QRegExp("\\s+"));
+        if (parts.size() >= 14) {
+            // utime + stime (用户时间 + 系统时间，单位：jiffies)
+            qint64 utime = parts[13].toLongLong();
+            qint64 stime = parts[14].toLongLong();
+            qint64 totalCpuTime = utime + stime;
+            
+            // 获取系统时钟频率（jiffies per second）
+            long clockTicks = sysconf(_SC_CLK_TCK);
+            if (clockTicks <= 0) {
+                clockTicks = 100;  // 默认值
+            }
+            
+            auto* d = const_cast<Private*>(d_func());
+            QMutexLocker locker(&d->mutex);
+            
+            QDateTime now = QDateTime::currentDateTime();
+            if (d->lastCpuTime.contains(pluginId) && d->lastCpuUpdate.contains(pluginId)) {
+                qint64 timeDelta = d->lastCpuUpdate[pluginId].msecsTo(now);
+                if (timeDelta > 0) {
+                    qint64 cpuDelta = totalCpuTime - d->lastCpuTime[pluginId];
+                    double cpuPercent = (static_cast<double>(cpuDelta) / clockTicks) / (timeDelta / 1000.0) * 100.0;
+                    
+                    d->lastCpuTime[pluginId] = totalCpuTime;
+                    d->lastCpuUpdate[pluginId] = now;
+                    
+                    return qBound(0.0, cpuPercent, 100.0);
+                }
+            }
+            
+            d->lastCpuTime[pluginId] = totalCpuTime;
+            d->lastCpuUpdate[pluginId] = now;
+        }
+    }
+#elif defined(_WIN32)
+    FILETIME createTime, exitTime, kernelTime, userTime;
+    HANDLE hProcess = GetCurrentProcess();
+    if (GetProcessTimes(hProcess, &createTime, &exitTime, &kernelTime, &userTime)) {
+        // 将FILETIME转换为100-nanosecond intervals
+        ULARGE_INTEGER kernel, user;
+        kernel.LowPart = kernelTime.dwLowDateTime;
+        kernel.HighPart = kernelTime.dwHighDateTime;
+        user.LowPart = userTime.dwLowDateTime;
+        user.HighPart = userTime.dwHighDateTime;
+        qint64 totalCpuTime = static_cast<qint64>(kernel.QuadPart + user.QuadPart);
+        
+        auto* d = const_cast<Private*>(d_func());
+        QMutexLocker locker(&d->mutex);
+        
+        QDateTime now = QDateTime::currentDateTime();
+        if (d->lastCpuTime.contains(pluginId) && d->lastCpuUpdate.contains(pluginId)) {
+            qint64 timeDelta = d->lastCpuUpdate[pluginId].msecsTo(now);
+            if (timeDelta > 0) {
+                qint64 cpuDelta = totalCpuTime - d->lastCpuTime[pluginId];
+                // 100-nanosecond intervals to seconds, then to percentage
+                double cpuPercent = (static_cast<double>(cpuDelta) / 10000000.0) / (timeDelta / 1000.0) * 100.0;
+                
+                d->lastCpuTime[pluginId] = totalCpuTime;
+                d->lastCpuUpdate[pluginId] = now;
+                
+                return qBound(0.0, cpuPercent, 100.0);
+            }
+        }
+        
+        d->lastCpuTime[pluginId] = totalCpuTime;
+        d->lastCpuUpdate[pluginId] = now;
+    }
+#elif defined(__APPLE__)
+    struct task_thread_times_info threadTimesInfo;
+    mach_msg_type_number_t size = TASK_THREAD_TIMES_INFO_COUNT;
+    kern_return_t kerr = task_info(mach_task_self(), TASK_THREAD_TIMES_INFO, (task_info_t)&threadTimesInfo, &size);
+    if (kerr == KERN_SUCCESS) {
+        // user_time + system_time (单位：微秒)
+        qint64 totalCpuTime = static_cast<qint64>(threadTimesInfo.user_time.seconds) * 1000000 +
+                              static_cast<qint64>(threadTimesInfo.user_time.microseconds) +
+                              static_cast<qint64>(threadTimesInfo.system_time.seconds) * 1000000 +
+                              static_cast<qint64>(threadTimesInfo.system_time.microseconds);
+        
+        auto* d = const_cast<Private*>(d_func());
+        QMutexLocker locker(&d->mutex);
+        
+        QDateTime now = QDateTime::currentDateTime();
+        if (d->lastCpuTime.contains(pluginId) && d->lastCpuUpdate.contains(pluginId)) {
+            qint64 timeDelta = d->lastCpuUpdate[pluginId].msecsTo(now);
+            if (timeDelta > 0) {
+                qint64 cpuDelta = totalCpuTime - d->lastCpuTime[pluginId];
+                double cpuPercent = (static_cast<double>(cpuDelta) / 1000000.0) / (timeDelta / 1000.0) * 100.0;
+                
+                d->lastCpuTime[pluginId] = totalCpuTime;
+                d->lastCpuUpdate[pluginId] = now;
+                
+                return qBound(0.0, cpuPercent, 100.0);
+            }
+        }
+        
+        d->lastCpuTime[pluginId] = totalCpuTime;
+        d->lastCpuUpdate[pluginId] = now;
+    }
+#endif
+    
+    // 首次调用或无法获取时，返回0
     return 0.0;
 }
 
 qint64 ResourceMonitor::getPluginThreadCount(const QString& pluginId) const
 {
     Q_UNUSED(pluginId);
-    // 简化实现：获取进程线程数
+    // 获取进程线程数
     // 实际应该获取插件特定的线程数（需要线程跟踪）
     
 #ifdef __linux__
@@ -382,6 +518,37 @@ qint64 ResourceMonitor::getPluginThreadCount(const QString& pluginId) const
                 return value.toLongLong();
             }
         }
+    }
+#elif defined(_WIN32)
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (hSnapshot != INVALID_HANDLE_VALUE) {
+        THREADENTRY32 te32;
+        te32.dwSize = sizeof(THREADENTRY32);
+        
+        DWORD currentProcessId = GetCurrentProcessId();
+        qint64 threadCount = 0;
+        
+        if (Thread32First(hSnapshot, &te32)) {
+            do {
+                if (te32.th32OwnerProcessID == currentProcessId) {
+                    threadCount++;
+                }
+            } while (Thread32Next(hSnapshot, &te32));
+        }
+        
+        CloseHandle(hSnapshot);
+        return threadCount;
+    }
+#elif defined(__APPLE__)
+    mach_port_t task = mach_task_self();
+    thread_act_array_t threadList;
+    mach_msg_type_number_t threadCount;
+    
+    kern_return_t kerr = task_threads(task, &threadList, &threadCount);
+    if (kerr == KERN_SUCCESS) {
+        // 释放线程列表
+        vm_deallocate(task, (vm_address_t)threadList, threadCount * sizeof(thread_act_t));
+        return static_cast<qint64>(threadCount);
     }
 #endif
     

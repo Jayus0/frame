@@ -24,6 +24,18 @@ public:
     QTimer* monitoringTimer;
     mutable QMutex mutex;
     
+    // CPU使用率计算需要的历史数据
+#ifdef _WIN32
+    mutable QMap<QString, qint64> lastCpuTime;  // pluginId -> last CPU time (100-nanosecond intervals)
+    mutable QMap<QString, QDateTime> lastCpuUpdate;  // pluginId -> last update time
+#elif defined(__APPLE__)
+    mutable QMap<QString, qint64> lastCpuTime;  // pluginId -> last CPU time (microseconds)
+    mutable QMap<QString, QDateTime> lastCpuUpdate;  // pluginId -> last update time
+#elif defined(__linux__)
+    mutable QMap<QString, qint64> lastCpuTime;  // pluginId -> last CPU time (jiffies)
+    mutable QMap<QString, QDateTime> lastCpuUpdate;  // pluginId -> last update time
+#endif
+    
     Private()
         : monitoringEnabled(true)
         , enforcementEnabled(false)
