@@ -75,6 +75,7 @@ bool ServiceRegistry::registerService(const ServiceDescriptor& descriptor, QObje
     // 注册到负载均衡器
     if (d->loadBalancer && d->enableLoadBalance) {
         locker.unlock();  // 释放锁，避免死锁
+        // 使用ServiceDescriptor注册，LoadBalancer内部会生成instanceId
         d->loadBalancer->registerInstance(descriptor.serviceName, desc, provider, 1);
         locker.relock();
     }

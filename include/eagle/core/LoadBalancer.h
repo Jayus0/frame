@@ -115,11 +115,6 @@ public:
     void setInstanceWeight(const QString& serviceName, const QString& instanceId, int weight);
     
     /**
-     * @brief 生成实例ID
-     */
-    QString generateInstanceId(const ServiceDescriptor& descriptor) const;
-    
-    /**
      * @brief 根据provider获取实例ID
      */
     QString getInstanceIdByProvider(const QString& serviceName, QObject* provider) const;
