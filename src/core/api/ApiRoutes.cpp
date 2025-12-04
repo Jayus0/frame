@@ -1491,11 +1491,11 @@ void registerApiRoutes(ApiServer* server) {
             return;
         }
         
-        KeyVersion version = ConfigEncryption::getCurrentKeyVersion();
+        Core::KeyVersion version = ConfigEncryption::getCurrentKeyVersion();
         
         QJsonObject result;
         result["version"] = version.version;
-        result["algorithm"] = (version.algorithm == EncryptionAlgorithm::AES256 ? "AES256" : "XOR");
+        result["algorithm"] = (version.algorithm == Core::EncryptionAlgorithm::AES256 ? "AES256" : "XOR");
         result["keyId"] = version.keyId;
         result["pbkdf2Iterations"] = version.pbkdf2Iterations;
         result["hasSalt"] = !version.salt.isEmpty();
