@@ -487,11 +487,13 @@ bool RBACManager::checkPermission(const QString& userId, const QString& permissi
         QMutexLocker cacheLocker(&d->cacheMutex);
         
         if (d->permissionCache.contains(cacheKey)) {
-            PermissionCacheEntry& entry = d->permissionCache[cacheKey];
+            PermissionCacheEntry entry = d->permissionCache[cacheKey];
             
             // 检查是否过期
             if (!entry.isExpired()) {
                 entry.updateAccessTime();
+                // 更新缓存中的访问时间
+                d->permissionCache[cacheKey] = entry;
                 return entry.result;
             } else {
                 // 过期，移除
@@ -568,8 +570,10 @@ bool RBACManager::loadFromConfig(const QVariantMap& config)
     for (auto it = rolesData.begin(); it != rolesData.end(); ++it) {
         QVariantMap roleData = it.value().toMap();
         Role role(it.key(), roleData["description"].toString());
-        role.permissions = QSet<QString>::fromList(roleData["permissions"].toStringList());
-        role.parentRoles = QSet<QString>::fromList(roleData["parent_roles"].toStringList());
+        QStringList permsList = roleData["permissions"].toStringList();
+        role.permissions = QSet<QString>(permsList.begin(), permsList.end());
+        QStringList parentList = roleData["parent_roles"].toStringList();
+        role.parentRoles = QSet<QString>(parentList.begin(), parentList.end());
         d->roles[role.name] = role;
     }
     
@@ -578,8 +582,10 @@ bool RBACManager::loadFromConfig(const QVariantMap& config)
     for (auto it = usersData.begin(); it != usersData.end(); ++it) {
         QVariantMap userData = it.value().toMap();
         User user(it.key(), userData["username"].toString());
-        user.roles = QSet<QString>::fromList(userData["roles"].toStringList());
-        user.directPermissions = QSet<QString>::fromList(userData["permissions"].toStringList());
+        QStringList rolesList = userData["roles"].toStringList();
+        user.roles = QSet<QString>(rolesList.begin(), rolesList.end());
+        QStringList permsList = userData["permissions"].toStringList();
+        user.directPermissions = QSet<QString>(permsList.begin(), permsList.end());
         user.enabled = userData.contains("enabled") ? userData["enabled"].toBool() : true;
         d->users[user.userId] = user;
     }
@@ -721,7 +727,7 @@ void RBACManager::clearUserCache(const QString& userId)
 
 int RBACManager::getCacheSize() const
 {
-    const auto* d = d_func();
+    auto* d = const_cast<Private*>(d_func());
     QMutexLocker locker(&d->cacheMutex);
     
     // 清理过期条目
