@@ -586,6 +586,7 @@ RetryPolicyConfig ServiceRegistry::getRetryPolicy(const QString& serviceName) co
 // 辅助函数：判断错误是否可重试
 bool ServiceRegistry::isRetryableError(const QString& serviceName, const QString& error, const RetryPolicyConfig& config) const
 {
+    Q_UNUSED(serviceName)  // 参数保留用于未来扩展
     // 如果指定了不可重试的错误列表，检查是否在列表中
     if (!config.nonRetryableErrors.isEmpty()) {
         for (const QString& nonRetryable : config.nonRetryableErrors) {
@@ -641,9 +642,9 @@ int ServiceRegistry::calculateRetryDelay(const RetryPolicyConfig& config, int at
 
 // 辅助函数：尝试降级
 QVariant ServiceRegistry::tryDegrade(const QString& serviceName, const QString& method,
-                                     const QVariantList& args, DegradationTrigger trigger) const
+                                     const QVariantList& args, DegradationTrigger trigger)
 {
-    const auto* d = d_func();
+    auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     
     if (!d->enableDegradation) {

@@ -80,9 +80,9 @@ private:
     bool isRetryableError(const QString& serviceName, const QString& error, const RetryPolicyConfig& config) const;
     int calculateRetryDelay(const RetryPolicyConfig& config, int attemptCount) const;
     
-    // 降级辅助函数
+    // 降级辅助函数（非const，因为需要调用非const的callService）
     QVariant tryDegrade(const QString& serviceName, const QString& method, 
-                       const QVariantList& args, DegradationTrigger trigger) const;
+                       const QVariantList& args, DegradationTrigger trigger);
     
 public:
 signals:
