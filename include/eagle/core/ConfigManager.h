@@ -48,6 +48,10 @@ public:
     // 配置验证
     bool validateConfig(const QVariantMap& config, const QString& schemaPath) const;
     
+    // Schema管理
+    void setSchemaPath(const QString& schemaPath);
+    QString schemaPath() const;
+    
     // 配置监听
     void watchConfig(const QString& key, QObject* receiver, const char* method);
     

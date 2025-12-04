@@ -21,6 +21,7 @@
 #include "eagle/core/DiagnosticManager.h"
 #include "eagle/core/ResourceMonitor.h"
 #include "eagle/core/ConfigEncryption.h"
+#include "eagle/core/ConfigSchema.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -75,6 +76,9 @@ public:
         QCommandLineOption encryptionOption("encryption", "Encryption management");
         parser.addOption(encryptionOption);
         
+        QCommandLineOption schemaOption("schema", "Schema validation");
+        parser.addOption(schemaOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -104,6 +108,8 @@ public:
             return handleDependency(args.mid(1));
         } else if (parser.isSet(encryptionOption) || command == "encryption") {
             return handleEncryption(args.mid(1));
+        } else if (parser.isSet(schemaOption) || command == "schema") {
+            return handleSchema(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1241,6 +1247,111 @@ private:
         } else {
             std::cerr << "Unknown encryption command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli encryption info|generate|rotate'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleSchema(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli schema <validate|load|info> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            std::cerr << "Error: ConfigManager not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "validate") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli schema validate <config-file> [schema-file]" << std::endl;
+                return 1;
+            }
+            
+            QString configFile = args[1];
+            QString schemaFile = args.size() > 2 ? args[2] : configManager->schemaPath();
+            
+            if (schemaFile.isEmpty()) {
+                std::cerr << "Error: Schema file path is required" << std::endl;
+                return 1;
+            }
+            
+            // 加载配置
+            QVariantMap config;
+            QFile file(configFile);
+            if (file.open(QIODevice::ReadOnly)) {
+                QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+                if (doc.isObject()) {
+                    config = doc.object().toVariantMap();
+                }
+                file.close();
+            } else {
+                std::cerr << "Error: Cannot open config file: " << configFile.toStdString() << std::endl;
+                return 1;
+            }
+            
+            // 验证
+            Eagle::Core::ConfigSchema schema;
+            if (!schema.loadFromFile(schemaFile)) {
+                std::cerr << "Error: Cannot load schema file: " << schemaFile.toStdString() << std::endl;
+                return 1;
+            }
+            
+            Eagle::Core::SchemaValidationResult result = schema.validate(config);
+            
+            if (result.valid) {
+                std::cout << "Configuration is valid!" << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Configuration validation failed with " << result.errors.size() << " error(s):" << std::endl;
+                for (const Eagle::Core::SchemaValidationError& error : result.errors) {
+                    std::cerr << "  [" << error.path.toStdString() << "] " 
+                              << error.code.toStdString() << ": " 
+                              << error.message.toStdString() << std::endl;
+                }
+                return 1;
+            }
+        } else if (subCommand == "load") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli schema load <schema-file>" << std::endl;
+                return 1;
+            }
+            
+            QString schemaFile = args[1];
+            configManager->setSchemaPath(schemaFile);
+            std::cout << "Schema path set to: " << schemaFile.toStdString() << std::endl;
+            return 0;
+        } else if (subCommand == "info") {
+            QString schemaPath = configManager->schemaPath();
+            if (schemaPath.isEmpty()) {
+                std::cout << "No schema path set." << std::endl;
+                return 0;
+            }
+            
+            std::cout << "Schema Path: " << schemaPath.toStdString() << std::endl;
+            
+            Eagle::Core::ConfigSchema schema;
+            if (schema.loadFromFile(schemaPath)) {
+                std::cout << "Title: " << schema.title().toStdString() << std::endl;
+                std::cout << "Description: " << schema.description().toStdString() << std::endl;
+                std::cout << "Valid: Yes" << std::endl;
+            } else {
+                std::cout << "Valid: No (cannot load schema file)" << std::endl;
+            }
+            return 0;
+        } else {
+            std::cerr << "Unknown schema command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli schema validate|load|info'" << std::endl;
             return 1;
         }
     }

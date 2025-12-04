@@ -1,6 +1,7 @@
 #include "eagle/core/ConfigManager.h"
 #include "ConfigManager_p.h"
 #include "eagle/core/ConfigEncryption.h"
+#include "eagle/core/ConfigSchema.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -259,11 +260,43 @@ bool ConfigManager::saveToFile(const QString& filePath, ConfigLevel level)
 
 bool ConfigManager::validateConfig(const QVariantMap& config, const QString& schemaPath) const
 {
-    // 简化实现，实际应该使用JSON Schema验证
-    Q_UNUSED(config)
-    Q_UNUSED(schemaPath)
-    Logger::warning("ConfigManager", "配置验证功能未完全实现");
+    if (schemaPath.isEmpty()) {
+        Logger::warning("ConfigManager", "Schema路径为空，跳过验证");
+        return true;
+    }
+    
+    ConfigSchema schema;
+    if (!schema.loadFromFile(schemaPath)) {
+        Logger::error("ConfigManager", QString("无法加载Schema文件: %1").arg(schemaPath));
+        return false;
+    }
+    
+    SchemaValidationResult result = schema.validate(config);
+    if (!result.valid) {
+        Logger::error("ConfigManager", QString("配置验证失败，发现 %1 个错误:").arg(result.errors.size()));
+        for (const SchemaValidationError& error : result.errors) {
+            Logger::error("ConfigManager", QString("  [%1] %2: %3").arg(error.path, error.code, error.message));
+        }
+        return false;
+    }
+    
+    Logger::info("ConfigManager", "配置验证通过");
     return true;
+}
+
+void ConfigManager::setSchemaPath(const QString& schemaPath)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->schemaPath = schemaPath;
+    Logger::info("ConfigManager", QString("设置Schema路径: %1").arg(schemaPath));
+}
+
+QString ConfigManager::schemaPath() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->schemaPath;
 }
 
 void ConfigManager::watchConfig(const QString& key, QObject* receiver, const char* method)

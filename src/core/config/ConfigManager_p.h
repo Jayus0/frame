@@ -19,6 +19,7 @@ public:
     bool encryptionEnabled = false;  // 是否启用加密
     QStringList sensitiveKeys;  // 需要加密的键列表
     QString encryptionKey;  // 加密密钥
+    QString schemaPath;  // Schema文件路径
 };
 
 } // namespace Core

@@ -17,6 +17,7 @@
 #include "eagle/core/DiagnosticManager.h"
 #include "eagle/core/ResourceMonitor.h"
 #include "eagle/core/ConfigEncryption.h"
+#include "eagle/core/ConfigSchema.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -1589,6 +1590,140 @@ void registerApiRoutes(ApiServer* server) {
         result["key"] = newKey;
         result["length"] = length;
         result["message"] = "新密钥已生成";
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/config/validate - 验证配置
+    server->post("/api/v1/config/validate", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.validate")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.validate");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QVariantMap config = body.value("config").toObject().toVariantMap();
+        QString schemaPath = body.value("schemaPath").toString();
+        
+        if (config.isEmpty()) {
+            resp.setError(400, "Bad Request", "config is required");
+            return;
+        }
+        
+        if (schemaPath.isEmpty()) {
+            ConfigManager* configManager = framework->configManager();
+            if (configManager) {
+                schemaPath = configManager->schemaPath();
+            }
+            if (schemaPath.isEmpty()) {
+                resp.setError(400, "Bad Request", "schemaPath is required");
+                return;
+            }
+        }
+        
+        ConfigSchema schema;
+        if (!schema.loadFromFile(schemaPath)) {
+            resp.setError(400, "Bad Request", QString("无法加载Schema文件: %1").arg(schemaPath));
+            return;
+        }
+        
+        SchemaValidationResult result = schema.validate(config);
+        
+        QJsonObject response;
+        response["valid"] = result.valid;
+        
+        QJsonArray errorsArray;
+        for (const SchemaValidationError& error : result.errors) {
+            QJsonObject errorObj;
+            errorObj["path"] = error.path;
+            errorObj["message"] = error.message;
+            errorObj["code"] = error.code;
+            errorsArray.append(errorObj);
+        }
+        response["errors"] = errorsArray;
+        response["errorCount"] = result.errors.size();
+        
+        if (result.valid) {
+            resp.setSuccess(response);
+        } else {
+            resp.setError(400, "Validation Failed", "配置验证失败", response);
+        }
+    });
+    
+    // POST /api/v1/config/schema - 加载Schema
+    server->post("/api/v1/config/schema", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.schema.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.schema.manage");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString schemaPath = body.value("schemaPath").toString();
+        
+        if (schemaPath.isEmpty()) {
+            resp.setError(400, "Bad Request", "schemaPath is required");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        configManager->setSchemaPath(schemaPath);
+        
+        QJsonObject result;
+        result["schemaPath"] = schemaPath;
+        result["message"] = "Schema路径已设置";
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/config/schema - 获取当前Schema信息
+    server->get("/api/v1/config/schema", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.schema.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.schema.view");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        QString schemaPath = configManager->schemaPath();
+        
+        QJsonObject result;
+        result["schemaPath"] = schemaPath;
+        
+        if (!schemaPath.isEmpty()) {
+            ConfigSchema schema;
+            if (schema.loadFromFile(schemaPath)) {
+                result["valid"] = true;
+                result["title"] = schema.title();
+                result["description"] = schema.description();
+            } else {
+                result["valid"] = false;
+                result["error"] = "无法加载Schema文件";
+            }
+        } else {
+            result["valid"] = false;
+            result["message"] = "未设置Schema路径";
+        }
+        
         resp.setSuccess(result);
     });
 }

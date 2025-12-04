@@ -19,6 +19,7 @@ set(SERVICE_SOURCES
 set(CONFIG_SOURCES
     config/ConfigManager.cpp
     config/ConfigEncryption.cpp
+    config/ConfigSchema.cpp
     config/BackupManager.cpp
 )
 
