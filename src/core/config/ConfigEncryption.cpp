@@ -11,7 +11,10 @@
 #include <QtCore/QJsonDocument>
 
 // 尝试使用OpenSSL（如果可用）
-// 检查OpenSSL是否可用
+// 注意：由于链接问题，暂时禁用OpenSSL，使用Qt回退实现
+// 如果需要使用OpenSSL，需要在CMakeLists.txt或.pro文件中链接OpenSSL库
+// #define USE_OPENSSL_AES  // 取消注释以启用OpenSSL（需要链接libssl和libcrypto）
+#if 0  // 暂时禁用OpenSSL检测
 #if defined(QT_FEATURE_openssl) && QT_FEATURE_openssl
 #include <openssl/evp.h>
 #include <openssl/rand.h>
@@ -22,10 +25,10 @@
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #define USE_OPENSSL_AES
-#else
+#endif
+#endif
 // 如果没有OpenSSL，使用Qt的加密功能实现AES（简化版）
 // 注意：这是一个简化的AES实现，生产环境建议使用OpenSSL
-#endif
 
 namespace Eagle {
 namespace Core {
