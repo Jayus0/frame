@@ -490,7 +490,15 @@ PluginStateSnapshot HotReloadManager::loadStateFromFile(const QString& pluginId)
     PluginStateSnapshot snapshot;
     snapshot.pluginId = obj["pluginId"].toString();
     snapshot.config = obj["config"].toObject().toVariantMap();
-    snapshot.loadedServices = obj["loadedServices"].toVariantList().toStringList();
+    
+    // 转换loadedServices数组
+    QJsonArray servicesArray = obj["loadedServices"].toArray();
+    QStringList servicesList;
+    for (const QJsonValue& value : servicesArray) {
+        servicesList.append(value.toString());
+    }
+    snapshot.loadedServices = servicesList;
+    
     snapshot.metadata = obj["metadata"].toObject().toVariantMap();
     snapshot.snapshotTime = QDateTime::fromString(obj["snapshotTime"].toString(), Qt::ISODate);
     
