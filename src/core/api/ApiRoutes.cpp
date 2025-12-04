@@ -73,6 +73,8 @@ Middleware createAuthMiddleware(Framework* framework) {
  */
 Middleware createPermissionMiddleware(Framework* framework) {
     return [framework](const HttpRequest& request, HttpResponse& response) -> bool {
+        Q_UNUSED(request);
+        Q_UNUSED(response);
         if (!framework) {
             return true; // 如果没有framework，跳过权限检查
         }
@@ -88,6 +90,7 @@ Middleware createPermissionMiddleware(Framework* framework) {
  */
 Middleware createRateLimitMiddleware(Framework* framework) {
     return [framework](const HttpRequest& request, HttpResponse& response) -> bool {
+        Q_UNUSED(response);
         if (!framework) {
             return true;
         }
