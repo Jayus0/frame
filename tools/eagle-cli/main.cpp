@@ -17,6 +17,7 @@
 #include "eagle/core/TestRunner.h"
 #include "eagle/core/TestCaseBase.h"
 #include "eagle/core/HotReloadManager.h"
+#include "eagle/core/FailoverManager.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -56,6 +57,9 @@ public:
         QCommandLineOption hotreloadOption("hotreload", "Hot reload plugins");
         parser.addOption(hotreloadOption);
         
+        QCommandLineOption failoverOption("failover", "Failover management");
+        parser.addOption(failoverOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -75,6 +79,8 @@ public:
             return handleTest(args.mid(1));
         } else if (parser.isSet(hotreloadOption) || command == "hotreload") {
             return handleHotReload(args.mid(1));
+        } else if (parser.isSet(failoverOption) || command == "failover") {
+            return handleFailover(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -706,6 +712,125 @@ private:
         } else {
             std::cerr << "Unknown hotreload command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli hotreload reload' or 'eagle-cli hotreload list'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleFailover(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli failover <list|register|nodes|switch|history> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::FailoverManager* failoverManager = framework->failoverManager();
+        if (!failoverManager) {
+            std::cerr << "Error: FailoverManager not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "list") {
+            QStringList services = failoverManager->getRegisteredServices();
+            std::cout << "Registered services (" << services.size() << "):" << std::endl;
+            for (const QString& serviceName : services) {
+                Eagle::Core::ServiceStatus status = failoverManager->getServiceStatus(serviceName);
+                Eagle::Core::ServiceNode primary = failoverManager->getCurrentPrimary(serviceName);
+                QString statusStr;
+                switch (status) {
+                    case Eagle::Core::ServiceStatus::Healthy:
+                        statusStr = "Healthy";
+                        break;
+                    case Eagle::Core::ServiceStatus::Degraded:
+                        statusStr = "Degraded";
+                        break;
+                    case Eagle::Core::ServiceStatus::Unhealthy:
+                        statusStr = "Unhealthy";
+                        break;
+                    case Eagle::Core::ServiceStatus::Failed:
+                        statusStr = "Failed";
+                        break;
+                }
+                std::cout << "  " << serviceName.toStdString() << " [" << statusStr.toStdString() 
+                          << "] Primary: " << primary.id.toStdString() << std::endl;
+            }
+            return 0;
+        } else if (subCommand == "nodes") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli failover nodes <service-name>" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            QList<Eagle::Core::ServiceNode> nodes = failoverManager->getNodes(serviceName);
+            std::cout << "Nodes for service " << serviceName.toStdString() << " (" << nodes.size() << "):" << std::endl;
+            for (const Eagle::Core::ServiceNode& node : nodes) {
+                QString roleStr = (node.role == Eagle::Core::ServiceRole::Primary) ? "Primary" : "Standby";
+                QString statusStr;
+                switch (node.status) {
+                    case Eagle::Core::ServiceStatus::Healthy:
+                        statusStr = "Healthy";
+                        break;
+                    case Eagle::Core::ServiceStatus::Degraded:
+                        statusStr = "Degraded";
+                        break;
+                    case Eagle::Core::ServiceStatus::Unhealthy:
+                        statusStr = "Unhealthy";
+                        break;
+                    case Eagle::Core::ServiceStatus::Failed:
+                        statusStr = "Failed";
+                        break;
+                }
+                std::cout << "  " << node.id.toStdString() << " [" << roleStr.toStdString() 
+                          << ", " << statusStr.toStdString() << "] " << node.endpoint.toStdString() << std::endl;
+            }
+            return 0;
+        } else if (subCommand == "switch") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli failover switch <service-name> [target-node-id]" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            QString targetNodeId = args.size() > 2 ? args[2] : QString();
+            
+            bool success = failoverManager->performFailover(serviceName, targetNodeId);
+            if (success) {
+                Eagle::Core::ServiceNode newPrimary = failoverManager->getCurrentPrimary(serviceName);
+                std::cout << "Failover successful. New primary: " << newPrimary.id.toStdString() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: Failed to perform failover" << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "history") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli failover history <service-name> [limit]" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            int limit = args.size() > 2 ? args[2].toInt() : 10;
+            
+            QList<Eagle::Core::FailoverEvent> events = failoverManager->getFailoverHistory(serviceName, limit);
+            std::cout << "Failover history for " << serviceName.toStdString() << " (" << events.size() << "):" << std::endl;
+            for (const Eagle::Core::FailoverEvent& event : events) {
+                std::cout << "  " << event.timestamp.toString(Qt::ISODate).toStdString() 
+                          << " " << event.fromNodeId.toStdString() << " -> " << event.toNodeId.toStdString()
+                          << " (" << event.reason.toStdString() << ") " 
+                          << (event.success ? "[Success]" : "[Failed]") << std::endl;
+            }
+            return 0;
+        } else {
+            std::cerr << "Unknown failover command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli failover list|nodes|switch|history'" << std::endl;
             return 1;
         }
     }

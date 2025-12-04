@@ -13,6 +13,7 @@
 #include "eagle/core/IPlugin.h"
 #include "eagle/core/BackupManager.h"
 #include "eagle/core/HotReloadManager.h"
+#include "eagle/core/FailoverManager.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -778,6 +779,182 @@ void registerApiRoutes(ApiServer* server) {
         QJsonObject data;
         data["plugins"] = pluginArray;
         data["count"] = pluginArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // ============================================================================
+    // 故障转移管理API
+    // ============================================================================
+    
+    // GET /api/v1/failover/services - 获取已注册的服务列表
+    server->get("/api/v1/failover/services", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "failover.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: failover.view");
+            return;
+        }
+        
+        FailoverManager* failoverManager = framework->failoverManager();
+        if (!failoverManager) {
+            resp.setError(500, "FailoverManager not available");
+            return;
+        }
+        
+        QStringList services = failoverManager->getRegisteredServices();
+        QJsonArray serviceArray;
+        for (const QString& serviceName : services) {
+            QJsonObject service;
+            service["name"] = serviceName;
+            service["status"] = static_cast<int>(failoverManager->getServiceStatus(serviceName));
+            ServiceNode primary = failoverManager->getCurrentPrimary(serviceName);
+            service["primaryNode"] = primary.id;
+            service["enabled"] = failoverManager->isServiceEnabled(serviceName);
+            serviceArray.append(service);
+        }
+        
+        QJsonObject data;
+        data["services"] = serviceArray;
+        data["count"] = serviceArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // POST /api/v1/failover/services/{name}/failover - 执行故障转移
+    server->post("/api/v1/failover/services/{name}/failover", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "failover.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: failover.manage");
+            return;
+        }
+        
+        FailoverManager* failoverManager = framework->failoverManager();
+        if (!failoverManager) {
+            resp.setError(500, "FailoverManager not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        if (serviceName.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing service name");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString targetNodeId = body.value("targetNodeId").toString();
+        
+        bool success = failoverManager->performFailover(serviceName, targetNodeId);
+        
+        if (success) {
+            ServiceNode newPrimary = failoverManager->getCurrentPrimary(serviceName);
+            QJsonObject data;
+            data["serviceName"] = serviceName;
+            data["primaryNode"] = newPrimary.id;
+            data["status"] = "switched";
+            resp.setSuccess(data);
+        } else {
+            resp.setError(500, "Failed to perform failover");
+        }
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/failover/services/{name}/failover", serviceName,
+                         success ? AuditLevel::Info : AuditLevel::Warning, success);
+        }
+    });
+    
+    // GET /api/v1/failover/services/{name}/nodes - 获取服务节点列表
+    server->get("/api/v1/failover/services/{name}/nodes", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "failover.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: failover.view");
+            return;
+        }
+        
+        FailoverManager* failoverManager = framework->failoverManager();
+        if (!failoverManager) {
+            resp.setError(500, "FailoverManager not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        if (serviceName.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing service name");
+            return;
+        }
+        
+        QList<ServiceNode> nodes = failoverManager->getNodes(serviceName);
+        QJsonArray nodeArray;
+        for (const ServiceNode& node : nodes) {
+            QJsonObject nodeObj;
+            nodeObj["id"] = node.id;
+            nodeObj["name"] = node.name;
+            nodeObj["role"] = static_cast<int>(node.role);
+            nodeObj["status"] = static_cast<int>(node.status);
+            nodeObj["endpoint"] = node.endpoint;
+            nodeObj["lastHealthCheck"] = node.lastHealthCheck.toString(Qt::ISODate);
+            nodeObj["consecutiveFailures"] = node.consecutiveFailures;
+            nodeArray.append(nodeObj);
+        }
+        
+        QJsonObject data;
+        data["nodes"] = nodeArray;
+        data["count"] = nodeArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // GET /api/v1/failover/services/{name}/history - 获取故障转移历史
+    server->get("/api/v1/failover/services/{name}/history", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "failover.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: failover.view");
+            return;
+        }
+        
+        FailoverManager* failoverManager = framework->failoverManager();
+        if (!failoverManager) {
+            resp.setError(500, "FailoverManager not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        if (serviceName.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing service name");
+            return;
+        }
+        
+        int limit = req.queryParams.value("limit", "10").toInt();
+        QList<FailoverEvent> events = failoverManager->getFailoverHistory(serviceName, limit);
+        
+        QJsonArray eventArray;
+        for (const FailoverEvent& event : events) {
+            QJsonObject eventObj;
+            eventObj["serviceName"] = event.serviceName;
+            eventObj["fromNodeId"] = event.fromNodeId;
+            eventObj["toNodeId"] = event.toNodeId;
+            eventObj["reason"] = event.reason;
+            eventObj["timestamp"] = event.timestamp.toString(Qt::ISODate);
+            eventObj["success"] = event.success;
+            eventArray.append(eventObj);
+        }
+        
+        QJsonObject data;
+        data["events"] = eventArray;
+        data["count"] = eventArray.size();
         resp.setSuccess(data);
     });
 }

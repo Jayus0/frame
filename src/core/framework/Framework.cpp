@@ -72,6 +72,7 @@ bool Framework::initialize(const QString& configPath)
     d->apiServer = new ApiServer(this);
     d->backupManager = new BackupManager(d->configManager, this);
     d->hotReloadManager = new HotReloadManager(d->pluginManager, this);
+    d->failoverManager = new FailoverManager(d->serviceRegistry, this);
     
     // 配置ServiceRegistry使用RBAC和限流器
     if (d->serviceRegistry) {
@@ -199,6 +200,9 @@ void Framework::shutdown()
     delete d->hotReloadManager;
     d->hotReloadManager = nullptr;
     
+    delete d->failoverManager;
+    d->failoverManager = nullptr;
+    
     delete d->alertSystem;
     d->alertSystem = nullptr;
     
@@ -308,6 +312,11 @@ BackupManager* Framework::backupManager() const
 HotReloadManager* Framework::hotReloadManager() const
 {
     return d->hotReloadManager;
+}
+
+FailoverManager* Framework::failoverManager() const
+{
+    return d->failoverManager;
 }
 
 QString Framework::version() const

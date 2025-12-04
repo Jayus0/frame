@@ -15,6 +15,7 @@
 #include "eagle/core/ApiServer.h"
 #include "eagle/core/BackupManager.h"
 #include "eagle/core/HotReloadManager.h"
+#include "eagle/core/FailoverManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -35,6 +36,7 @@ public:
     ApiServer* apiServer;
     BackupManager* backupManager;
     HotReloadManager* hotReloadManager;
+    FailoverManager* failoverManager;
     bool initialized;
     
     Private() 
@@ -52,6 +54,7 @@ public:
         , apiServer(nullptr)
         , backupManager(nullptr)
         , hotReloadManager(nullptr)
+        , failoverManager(nullptr)
         , initialized(false)
     {
     }

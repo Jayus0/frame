@@ -17,7 +17,8 @@ SERVICE_SOURCES += \
     ../src/core/service/ServiceRegistry.cpp \
     ../src/core/service/CircuitBreaker.cpp \
     ../src/core/service/RetryPolicy.cpp \
-    ../src/core/service/DegradationPolicy.cpp
+    ../src/core/service/DegradationPolicy.cpp \
+    ../src/core/service/FailoverManager.cpp
 
 # 配置模块
 CONFIG_SOURCES += \
@@ -117,6 +118,8 @@ HEADERS += \
     ../src/core/service/RetryPolicy_p.h \
     ../include/eagle/core/DegradationPolicy.h \
     ../src/core/service/DegradationPolicy_p.h \
+    ../include/eagle/core/FailoverManager.h \
+    ../src/core/service/FailoverManager_p.h \
     ../include/eagle/core/NotificationChannel.h \
     ../include/eagle/core/EmailChannel.h \
     ../include/eagle/core/WebhookChannel.h \

@@ -11,6 +11,7 @@ set(SERVICE_SOURCES
     service/CircuitBreaker.cpp
     service/RetryPolicy.cpp
     service/DegradationPolicy.cpp
+    service/FailoverManager.cpp
 )
 
 # 配置模块
@@ -105,6 +106,7 @@ set(HEADERS
     ../../include/eagle/core/ApiRoutes.h
     ../../include/eagle/core/RetryPolicy.h
     ../../include/eagle/core/DegradationPolicy.h
+    ../../include/eagle/core/FailoverManager.h
     ../../include/eagle/core/NotificationChannel.h
     ../../include/eagle/core/EmailChannel.h
     ../../include/eagle/core/WebhookChannel.h
