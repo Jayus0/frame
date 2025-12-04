@@ -1,7 +1,7 @@
 #include "eagle/core/ApiServer.h"
+#include "ApiServer_p.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/Logger.h"
-#include "ApiServer_p.h"
 #include <QtCore/QStringList>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
@@ -204,7 +204,7 @@ QByteArray HttpResponse::toHttpResponse() const {
 
 ApiServer::ApiServer(QObject* parent)
     : QObject(parent)
-    , d(new Private(this))
+    , d(new ApiServerPrivate(this))
 {
 }
 

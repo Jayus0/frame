@@ -12,14 +12,17 @@
 namespace Eagle {
 namespace Core {
 
+// 前向声明
+class ApiServer;
+
 struct Route {
     QString method;              // GET, POST, DELETE等
     QString pattern;             // 路由模式（如 /api/v1/plugins/{id}）
     RequestHandler handler;      // 处理器函数
 };
 
-// 定义ApiServer::Private类（与头文件中的前向声明对应）
-class ApiServer::Private {
+// 定义ApiServerPrivate类（ApiServer::Private的别名）
+class ApiServerPrivate {
 public:
     ApiServerPrivate(ApiServer* qq)
         : q(qq)

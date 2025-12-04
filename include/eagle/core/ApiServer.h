@@ -131,11 +131,11 @@ private slots:
 private:
     Q_DISABLE_COPY(ApiServer)
     
-    class Private;
-    Private* d;
+    class ApiServerPrivate;
+    ApiServerPrivate* d;
     
-    inline Private* d_func() { return d; }
-    inline const Private* d_func() const { return d; }
+    inline ApiServerPrivate* d_func() { return d; }
+    inline const ApiServerPrivate* d_func() const { return d; }
     
     // 路由匹配
     bool matchRoute(const QString& routePattern, const QString& path, QMap<QString, QString>& params) const;

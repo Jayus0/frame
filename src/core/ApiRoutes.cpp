@@ -470,7 +470,7 @@ void registerApiRoutes(ApiServer* server) {
         
         // 更新配置
         for (auto it = config.begin(); it != config.end(); ++it) {
-            configManager->setValue(it.key(), it.value(), ConfigManager::Global);
+            configManager->set(it.key(), it.value(), ConfigManager::Global);
         }
         
         QJsonObject data;
