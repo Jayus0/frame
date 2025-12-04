@@ -18,7 +18,8 @@ struct Route {
     RequestHandler handler;      // 处理器函数
 };
 
-class ApiServerPrivate {
+// 定义ApiServer::Private类（与头文件中的前向声明对应）
+class ApiServer::Private {
 public:
     ApiServerPrivate(ApiServer* qq)
         : q(qq)

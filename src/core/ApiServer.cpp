@@ -1,7 +1,7 @@
 #include "eagle/core/ApiServer.h"
-#include "ApiServer_p.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/Logger.h"
+#include "ApiServer_p.h"
 #include <QtCore/QStringList>
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
@@ -40,8 +40,10 @@ HttpRequest HttpRequest::parse(const QByteArray& rawRequest, const QString& remo
             req.path = fullPath.left(queryIndex);
             QString queryString = fullPath.mid(queryIndex + 1);
             QUrlQuery query(queryString);
-            for (const QString& key : query.queryItems().keys()) {
-                req.queryParams[key] = query.queryItemValue(key);
+            // QUrlQuery::queryItems() 返回 QList<QPair<QString, QString>>
+            QList<QPair<QString, QString> > items = query.queryItems();
+            for (const QPair<QString, QString>& item : items) {
+                req.queryParams[item.first] = item.second;
             }
         } else {
             req.path = fullPath;

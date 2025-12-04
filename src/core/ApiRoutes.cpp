@@ -412,20 +412,20 @@ void registerApiRoutes(ApiServer* server) {
         QString operation = req.queryParams.value("operation");
         int limit = req.queryParams.value("limit", "100").toInt();
         
-        QList<AuditLogEntry> entries;
-        if (!queryUserId.isEmpty() && !operation.isEmpty()) {
-            entries = auditLog->query(queryUserId, operation);
-        } else if (!queryUserId.isEmpty()) {
-            entries = auditLog->queryByUser(queryUserId);
-        } else {
-            entries = auditLog->getRecentEntries(limit);
+        // 使用query方法查询日志
+        QList<AuditLogEntry> entries = auditLog->query(queryUserId, operation);
+        
+        // 如果结果太多，只取最近的limit条
+        if (entries.size() > limit) {
+            // 取最后limit条（最新的）
+            entries = entries.mid(entries.size() - limit);
         }
         
         QJsonArray logs;
         for (const AuditLogEntry& entry : entries) {
             QJsonObject log;
             log["userId"] = entry.userId;
-            log["operation"] = entry.operation;
+            log["operation"] = entry.action;  // 使用action而不是operation
             log["resource"] = entry.resource;
             log["level"] = static_cast<int>(entry.level);
             log["success"] = entry.success;
