@@ -484,20 +484,22 @@ bool RBACManager::checkPermission(const QString& userId, const QString& permissi
     // 检查缓存
     if (d->cacheEnabled) {
         QString cacheKey = QString("%1:%2").arg(userId, permissionName);
-        QMutexLocker cacheLocker(&d->cacheMutex);
+        // 使用const_cast来修改缓存（缓存是mutable的，但QMap不是）
+        auto* mutableD = const_cast<Private*>(d);
+        QMutexLocker cacheLocker(&mutableD->cacheMutex);
         
-        if (d->permissionCache.contains(cacheKey)) {
-            PermissionCacheEntry entry = d->permissionCache[cacheKey];
+        if (mutableD->permissionCache.contains(cacheKey)) {
+            PermissionCacheEntry entry = mutableD->permissionCache[cacheKey];
             
             // 检查是否过期
             if (!entry.isExpired()) {
                 entry.updateAccessTime();
                 // 更新缓存中的访问时间
-                d->permissionCache[cacheKey] = entry;
+                mutableD->permissionCache[cacheKey] = entry;
                 return entry.result;
             } else {
                 // 过期，移除
-                d->permissionCache.remove(cacheKey);
+                mutableD->permissionCache.remove(cacheKey);
             }
         }
         cacheLocker.unlock();
