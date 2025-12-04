@@ -127,6 +127,10 @@ HEADERS += \
     ../src/core/service/DegradationPolicy_p.h \
     ../include/eagle/core/FailoverManager.h \
     ../src/core/service/FailoverManager_p.h \
+    ../include/eagle/core/LoadBalancer.h \
+    ../src/core/service/LoadBalancer_p.h \
+    ../include/eagle/core/ConfigVersion.h \
+    ../src/core/config/ConfigVersion_p.h \
     ../include/eagle/core/NotificationChannel.h \
     ../include/eagle/core/EmailChannel.h \
     ../include/eagle/core/WebhookChannel.h \
