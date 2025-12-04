@@ -42,10 +42,21 @@ public:
                         const QVariantList& args = QVariantList(),
                         int timeout = 5000);
     
+    // 带用户ID的服务调用（支持权限检查和限流）
+    QVariant callService(const QString& userId, const QString& serviceName, 
+                        const QString& method, const QVariantList& args = QVariantList());
+    
     // 配置
     void setDefaultTimeout(int timeoutMs);
     void setCircuitBreakerEnabled(bool enabled);
     void setCircuitBreakerConfig(const QString& serviceName, const CircuitBreakerConfig& config);
+    
+    // 权限和限流配置
+    void setPermissionCheckEnabled(bool enabled);
+    bool isPermissionCheckEnabled() const;
+    void setRateLimitEnabled(bool enabled);
+    bool isRateLimitEnabled() const;
+    void setServiceRateLimit(const QString& serviceName, int maxRequests, int windowMs);
     
     // 健康检查
     bool checkServiceHealth(const QString& serviceName) const;
