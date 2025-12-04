@@ -13,7 +13,7 @@ namespace Core {
  */
 class EmailChannelImpl : public NotificationChannel {
 public:
-    explicit EmailChannel(QObject* parent = nullptr)
+    explicit EmailChannelImpl(QObject* parent = nullptr)
         : NotificationChannel(parent)
     {
         enabled = false;

@@ -21,7 +21,7 @@ namespace Core {
  */
 class WebhookChannelImpl : public NotificationChannel {
 public:
-    explicit WebhookChannel(QObject* parent = nullptr)
+    explicit WebhookChannelImpl(QObject* parent = nullptr)
         : NotificationChannel(parent)
         , networkManager(new QNetworkAccessManager(this))
     {
