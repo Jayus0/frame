@@ -17,6 +17,7 @@
 #include "BackupManager.h"
 #include "HotReloadManager.h"
 #include "FailoverManager.h"
+#include "DiagnosticManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -53,6 +54,7 @@ public:
     BackupManager* backupManager() const;
     HotReloadManager* hotReloadManager() const;
     FailoverManager* failoverManager() const;
+    DiagnosticManager* diagnosticManager() const;
     
     // 框架信息
     QString version() const;

@@ -16,6 +16,7 @@
 #include "eagle/core/BackupManager.h"
 #include "eagle/core/HotReloadManager.h"
 #include "eagle/core/FailoverManager.h"
+#include "eagle/core/DiagnosticManager.h"
 
 namespace Eagle {
 namespace Core {
@@ -37,6 +38,7 @@ public:
     BackupManager* backupManager;
     HotReloadManager* hotReloadManager;
     FailoverManager* failoverManager;
+    DiagnosticManager* diagnosticManager;
     bool initialized;
     
     Private() 
@@ -55,6 +57,7 @@ public:
         , backupManager(nullptr)
         , hotReloadManager(nullptr)
         , failoverManager(nullptr)
+        , diagnosticManager(nullptr)
         , initialized(false)
     {
     }

@@ -14,6 +14,7 @@
 #include "eagle/core/BackupManager.h"
 #include "eagle/core/HotReloadManager.h"
 #include "eagle/core/FailoverManager.h"
+#include "eagle/core/DiagnosticManager.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -955,6 +956,300 @@ void registerApiRoutes(ApiServer* server) {
         QJsonObject data;
         data["events"] = eventArray;
         data["count"] = eventArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // ============================================================================
+    // 诊断工具API
+    // ============================================================================
+    
+    // POST /api/v1/diagnostics/stacktrace - 捕获堆栈跟踪
+    server->post("/api/v1/diagnostics/stacktrace", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.stacktrace")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.stacktrace");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString message = body.value("message").toString();
+        
+        StackTrace trace = diagnosticManager->captureStackTrace(message);
+        
+        QJsonObject traceObj;
+        traceObj["id"] = trace.id;
+        traceObj["threadId"] = trace.threadId;
+        traceObj["threadName"] = trace.threadName;
+        traceObj["timestamp"] = trace.timestamp.toString(Qt::ISODate);
+        traceObj["message"] = trace.message;
+        
+        QJsonArray framesArray;
+        for (const StackFrame& frame : trace.frames) {
+            QJsonObject frameObj;
+            frameObj["function"] = frame.function;
+            frameObj["file"] = frame.file;
+            frameObj["line"] = frame.line;
+            frameObj["address"] = frame.address;
+            frameObj["module"] = frame.module;
+            framesArray.append(frameObj);
+        }
+        traceObj["frames"] = framesArray;
+        
+        resp.setSuccess(traceObj);
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/diagnostics/stacktrace", trace.id, AuditLevel::Info, true);
+        }
+    });
+    
+    // GET /api/v1/diagnostics/stacktraces - 获取堆栈跟踪列表
+    server->get("/api/v1/diagnostics/stacktraces", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.view");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QStringList traceIds = diagnosticManager->getStackTraceIds();
+        QJsonArray traceArray;
+        for (const QString& traceId : traceIds) {
+            StackTrace trace = diagnosticManager->getStackTrace(traceId);
+            QJsonObject traceObj;
+            traceObj["id"] = trace.id;
+            traceObj["threadId"] = trace.threadId;
+            traceObj["threadName"] = trace.threadName;
+            traceObj["timestamp"] = trace.timestamp.toString(Qt::ISODate);
+            traceObj["message"] = trace.message;
+            traceObj["frameCount"] = trace.frames.size();
+            traceArray.append(traceObj);
+        }
+        
+        QJsonObject data;
+        data["traces"] = traceArray;
+        data["count"] = traceArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // GET /api/v1/diagnostics/stacktraces/{id} - 获取堆栈跟踪详情
+    server->get("/api/v1/diagnostics/stacktraces/{id}", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.view");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QString traceId = req.pathParams.value("id");
+        if (traceId.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing trace ID");
+            return;
+        }
+        
+        StackTrace trace = diagnosticManager->getStackTrace(traceId);
+        if (trace.id.isEmpty()) {
+            resp.setError(404, "Not Found", QString("Stack trace not found: %1").arg(traceId));
+            return;
+        }
+        
+        QJsonObject traceObj;
+        traceObj["id"] = trace.id;
+        traceObj["threadId"] = trace.threadId;
+        traceObj["threadName"] = trace.threadName;
+        traceObj["timestamp"] = trace.timestamp.toString(Qt::ISODate);
+        traceObj["message"] = trace.message;
+        
+        QJsonArray framesArray;
+        for (const StackFrame& frame : trace.frames) {
+            QJsonObject frameObj;
+            frameObj["function"] = frame.function;
+            frameObj["file"] = frame.file;
+            frameObj["line"] = frame.line;
+            frameObj["address"] = frame.address;
+            frameObj["module"] = frame.module;
+            framesArray.append(frameObj);
+        }
+        traceObj["frames"] = framesArray;
+        
+        resp.setSuccess(traceObj);
+    });
+    
+    // POST /api/v1/diagnostics/memory/snapshot - 捕获内存快照
+    server->post("/api/v1/diagnostics/memory/snapshot", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.memory")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.memory");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString name = body.value("name").toString();
+        
+        MemorySnapshot snapshot = diagnosticManager->captureMemorySnapshot(name);
+        
+        QJsonObject snapshotObj;
+        snapshotObj["id"] = snapshot.id;
+        snapshotObj["timestamp"] = snapshot.timestamp.toString(Qt::ISODate);
+        snapshotObj["totalMemory"] = snapshot.totalMemory;
+        snapshotObj["usedMemory"] = snapshot.usedMemory;
+        snapshotObj["freeMemory"] = snapshot.freeMemory;
+        snapshotObj["heapSize"] = snapshot.heapSize;
+        snapshotObj["objectCount"] = snapshot.objectCount;
+        snapshotObj["memoryUsagePercent"] = snapshot.memoryUsagePercent();
+        snapshotObj["details"] = QJsonObject::fromVariantMap(snapshot.details);
+        
+        resp.setSuccess(snapshotObj);
+        
+        // 审计日志
+        AuditLogManager* auditLog = framework->auditLogManager();
+        if (auditLog) {
+            auditLog->log(userId, "POST /api/v1/diagnostics/memory/snapshot", snapshot.id, AuditLevel::Info, true);
+        }
+    });
+    
+    // GET /api/v1/diagnostics/memory/snapshots - 获取内存快照列表
+    server->get("/api/v1/diagnostics/memory/snapshots", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.view");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QStringList snapshotIds = diagnosticManager->getMemorySnapshotIds();
+        QJsonArray snapshotArray;
+        for (const QString& snapshotId : snapshotIds) {
+            MemorySnapshot snapshot = diagnosticManager->getMemorySnapshot(snapshotId);
+            QJsonObject snapshotObj;
+            snapshotObj["id"] = snapshot.id;
+            snapshotObj["timestamp"] = snapshot.timestamp.toString(Qt::ISODate);
+            snapshotObj["usedMemory"] = snapshot.usedMemory;
+            snapshotObj["heapSize"] = snapshot.heapSize;
+            snapshotObj["memoryUsagePercent"] = snapshot.memoryUsagePercent();
+            snapshotArray.append(snapshotObj);
+        }
+        
+        QJsonObject data;
+        data["snapshots"] = snapshotArray;
+        data["count"] = snapshotArray.size();
+        resp.setSuccess(data);
+    });
+    
+    // POST /api/v1/diagnostics/memory/compare - 比较内存快照
+    server->post("/api/v1/diagnostics/memory/compare", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.memory")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.memory");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString snapshotId1 = body.value("snapshot1").toString();
+        QString snapshotId2 = body.value("snapshot2").toString();
+        
+        if (snapshotId1.isEmpty() || snapshotId2.isEmpty()) {
+            resp.setError(400, "Bad Request", "Missing snapshot IDs");
+            return;
+        }
+        
+        QVariantMap comparison = diagnosticManager->compareSnapshots(snapshotId1, snapshotId2);
+        if (comparison.isEmpty()) {
+            resp.setError(404, "Not Found", "One or both snapshots not found");
+            return;
+        }
+        
+        resp.setSuccess(QJsonObject::fromVariantMap(comparison));
+    });
+    
+    // GET /api/v1/diagnostics/deadlocks - 获取死锁列表
+    server->get("/api/v1/diagnostics/deadlocks", [framework](const HttpRequest& req, HttpResponse& resp) {
+        Q_UNUSED(req);
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "diagnostic.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: diagnostic.view");
+            return;
+        }
+        
+        DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            resp.setError(500, "DiagnosticManager not available");
+            return;
+        }
+        
+        QList<DeadlockInfo> deadlocks = diagnosticManager->getDeadlocks();
+        QJsonArray deadlockArray;
+        for (const DeadlockInfo& deadlock : deadlocks) {
+            QJsonObject deadlockObj;
+            deadlockObj["id"] = deadlock.id;
+            deadlockObj["timestamp"] = deadlock.timestamp.toString(Qt::ISODate);
+            deadlockObj["threadIds"] = QJsonArray::fromStringList(deadlock.threadIds);
+            deadlockObj["lockIds"] = QJsonArray::fromStringList(deadlock.lockIds);
+            deadlockObj["description"] = deadlock.description;
+            deadlockArray.append(deadlockObj);
+        }
+        
+        QJsonObject data;
+        data["deadlocks"] = deadlockArray;
+        data["count"] = deadlockArray.size();
         resp.setSuccess(data);
     });
 }

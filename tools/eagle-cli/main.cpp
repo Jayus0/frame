@@ -18,6 +18,7 @@
 #include "eagle/core/TestCaseBase.h"
 #include "eagle/core/HotReloadManager.h"
 #include "eagle/core/FailoverManager.h"
+#include "eagle/core/DiagnosticManager.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -60,6 +61,9 @@ public:
         QCommandLineOption failoverOption("failover", "Failover management");
         parser.addOption(failoverOption);
         
+        QCommandLineOption diagnosticOption("diagnostic", "Diagnostic tools");
+        parser.addOption(diagnosticOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -81,6 +85,8 @@ public:
             return handleHotReload(args.mid(1));
         } else if (parser.isSet(failoverOption) || command == "failover") {
             return handleFailover(args.mid(1));
+        } else if (parser.isSet(diagnosticOption) || command == "diagnostic") {
+            return handleDiagnostic(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -831,6 +837,156 @@ private:
         } else {
             std::cerr << "Unknown failover command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli failover list|nodes|switch|history'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleDiagnostic(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli diagnostic <stacktrace|memory|deadlock> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::DiagnosticManager* diagnosticManager = framework->diagnosticManager();
+        if (!diagnosticManager) {
+            std::cerr << "Error: DiagnosticManager not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "stacktrace") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli diagnostic stacktrace <capture|list|show> [options]" << std::endl;
+                return 1;
+            }
+            
+            QString action = args[1];
+            if (action == "capture") {
+                QString message = args.size() > 2 ? args[2] : QString();
+                Eagle::Core::StackTrace trace = diagnosticManager->captureStackTrace(message);
+                std::cout << "Stack trace captured: " << trace.id.toStdString() << std::endl;
+                std::cout << trace.toString().toStdString() << std::endl;
+                return 0;
+            } else if (action == "list") {
+                QStringList traceIds = diagnosticManager->getStackTraceIds();
+                std::cout << "Stack traces (" << traceIds.size() << "):" << std::endl;
+                for (const QString& traceId : traceIds) {
+                    Eagle::Core::StackTrace trace = diagnosticManager->getStackTrace(traceId);
+                    std::cout << "  " << traceId.toStdString() << " [" 
+                              << trace.timestamp.toString(Qt::ISODate).toStdString() << "] "
+                              << trace.threadName.toStdString() << std::endl;
+                }
+                return 0;
+            } else if (action == "show") {
+                if (args.size() < 3) {
+                    std::cerr << "Usage: eagle-cli diagnostic stacktrace show <trace-id>" << std::endl;
+                    return 1;
+                }
+                
+                QString traceId = args[2];
+                Eagle::Core::StackTrace trace = diagnosticManager->getStackTrace(traceId);
+                if (trace.id.isEmpty()) {
+                    std::cerr << "Error: Stack trace not found: " << traceId.toStdString() << std::endl;
+                    return 1;
+                }
+                
+                std::cout << trace.toString().toStdString() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Unknown stacktrace action: " << action.toStdString() << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "memory") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli diagnostic memory <snapshot|list|compare> [options]" << std::endl;
+                return 1;
+            }
+            
+            QString action = args[1];
+            if (action == "snapshot") {
+                QString name = args.size() > 2 ? args[2] : QString();
+                Eagle::Core::MemorySnapshot snapshot = diagnosticManager->captureMemorySnapshot(name);
+                std::cout << "Memory snapshot captured: " << snapshot.id.toStdString() << std::endl;
+                std::cout << "Total Memory: " << (snapshot.totalMemory / 1024 / 1024) << " MB" << std::endl;
+                std::cout << "Used Memory: " << (snapshot.usedMemory / 1024 / 1024) << " MB" << std::endl;
+                std::cout << "Heap Size: " << (snapshot.heapSize / 1024 / 1024) << " MB" << std::endl;
+                std::cout << "Usage: " << snapshot.memoryUsagePercent() << "%" << std::endl;
+                return 0;
+            } else if (action == "list") {
+                QStringList snapshotIds = diagnosticManager->getMemorySnapshotIds();
+                std::cout << "Memory snapshots (" << snapshotIds.size() << "):" << std::endl;
+                for (const QString& snapshotId : snapshotIds) {
+                    Eagle::Core::MemorySnapshot snapshot = diagnosticManager->getMemorySnapshot(snapshotId);
+                    std::cout << "  " << snapshotId.toStdString() << " [" 
+                              << snapshot.timestamp.toString(Qt::ISODate).toStdString() << "] "
+                              << (snapshot.usedMemory / 1024 / 1024) << " MB (" 
+                              << snapshot.memoryUsagePercent() << "%)" << std::endl;
+                }
+                return 0;
+            } else if (action == "compare") {
+                if (args.size() < 4) {
+                    std::cerr << "Usage: eagle-cli diagnostic memory compare <snapshot-id1> <snapshot-id2>" << std::endl;
+                    return 1;
+                }
+                
+                QString snapshotId1 = args[2];
+                QString snapshotId2 = args[3];
+                QVariantMap comparison = diagnosticManager->compareSnapshots(snapshotId1, snapshotId2);
+                
+                if (comparison.isEmpty()) {
+                    std::cerr << "Error: Failed to compare snapshots" << std::endl;
+                    return 1;
+                }
+                
+                std::cout << "Memory Comparison:" << std::endl;
+                std::cout << "  Memory Diff: " << (comparison["memoryDiff"].toLongLong() / 1024 / 1024) << " MB" << std::endl;
+                std::cout << "  Heap Diff: " << (comparison["heapDiff"].toLongLong() / 1024 / 1024) << " MB" << std::endl;
+                std::cout << "  Possible Leak: " << (comparison["possibleLeak"].toBool() ? "Yes" : "No") << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Unknown memory action: " << action.toStdString() << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "deadlock") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli diagnostic deadlock <list|enable|disable>" << std::endl;
+                return 1;
+            }
+            
+            QString action = args[1];
+            if (action == "list") {
+                QList<Eagle::Core::DeadlockInfo> deadlocks = diagnosticManager->getDeadlocks();
+                std::cout << "Deadlocks (" << deadlocks.size() << "):" << std::endl;
+                for (const Eagle::Core::DeadlockInfo& deadlock : deadlocks) {
+                    std::cout << "  " << deadlock.id.toStdString() << " [" 
+                              << deadlock.timestamp.toString(Qt::ISODate).toStdString() << "]" << std::endl;
+                    std::cout << "    Threads: " << deadlock.threadIds.join(", ").toStdString() << std::endl;
+                    std::cout << "    Locks: " << deadlock.lockIds.join(", ").toStdString() << std::endl;
+                }
+                return 0;
+            } else if (action == "enable") {
+                diagnosticManager->setDeadlockDetectionEnabled(true);
+                std::cout << "Deadlock detection enabled" << std::endl;
+                return 0;
+            } else if (action == "disable") {
+                diagnosticManager->setDeadlockDetectionEnabled(false);
+                std::cout << "Deadlock detection disabled" << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Unknown deadlock action: " << action.toStdString() << std::endl;
+                return 1;
+            }
+        } else {
+            std::cerr << "Unknown diagnostic command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli diagnostic stacktrace|memory|deadlock'" << std::endl;
             return 1;
         }
     }

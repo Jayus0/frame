@@ -37,6 +37,7 @@ set(MONITORING_SOURCES
     monitoring/NotificationChannel.cpp
     monitoring/EmailChannel.cpp
     monitoring/WebhookChannel.cpp
+    monitoring/DiagnosticManager.cpp
 )
 
 # API模块
@@ -110,6 +111,7 @@ set(HEADERS
     ../../include/eagle/core/NotificationChannel.h
     ../../include/eagle/core/EmailChannel.h
     ../../include/eagle/core/WebhookChannel.h
+    ../../include/eagle/core/DiagnosticManager.h
     ../../include/eagle/core/BackupManager.h
     ../../include/eagle/core/TestCaseBase.h
     ../../include/eagle/core/TestRunner.h
