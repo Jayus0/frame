@@ -20,12 +20,14 @@ public:
     QMap<QString, QPair<int, int>> serviceRateLimits; // serviceName -> (maxRequests, windowMs)
     QMap<QString, RetryPolicyConfig> retryPolicies;    // serviceName -> retryPolicy
     QMap<QString, DegradationPolicyConfig> degradationPolicies;  // serviceName -> degradationPolicy
+    LoadBalancer* loadBalancer = nullptr;  // 负载均衡器
     int defaultTimeoutMs = 5000;  // 默认超时时间
     bool enableCircuitBreaker = true;  // 是否启用熔断器
     bool enablePermissionCheck = false;  // 是否启用权限检查
     bool enableRateLimit = false;  // 是否启用限流
     bool enableRetry = true;  // 是否启用重试
     bool enableDegradation = true;  // 是否启用降级
+    bool enableLoadBalance = true;  // 是否启用负载均衡
     mutable QMutex mutex;  // mutable 允许在 const 函数中锁定
 };
 

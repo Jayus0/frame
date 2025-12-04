@@ -11,6 +11,7 @@
 #include "CircuitBreaker.h"
 #include "RetryPolicy.h"
 #include "DegradationPolicy.h"
+#include "LoadBalancer.h"
 
 namespace Eagle {
 namespace Core {
@@ -74,6 +75,13 @@ public:
     
     // 健康检查
     bool checkServiceHealth(const QString& serviceName) const;
+    
+    // 负载均衡配置
+    void setLoadBalanceEnabled(bool enabled);
+    bool isLoadBalanceEnabled() const;
+    void setLoadBalanceAlgorithm(const QString& serviceName, const QString& algorithm);
+    QString getLoadBalanceAlgorithm(const QString& serviceName) const;
+    LoadBalancer* loadBalancer() const;
     
 private:
     // 重试辅助函数

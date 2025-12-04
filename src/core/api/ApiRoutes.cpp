@@ -19,6 +19,7 @@
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
 #include "eagle/core/PluginSignature.h"
+#include "eagle/core/LoadBalancer.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -1893,6 +1894,185 @@ void registerApiRoutes(ApiServer* server) {
         QJsonObject result;
         result["message"] = "受信任的根证书已设置";
         result["count"] = rootPaths.size();
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/services/{name}/loadbalance - 获取服务负载均衡配置
+    server->get("/api/v1/services/{name}/loadbalance", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "service.loadbalance.view")) {
+            resp.setError(403, "Forbidden", "缺少权限: service.loadbalance.view");
+            return;
+        }
+        
+        ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            resp.setError(500, "ServiceRegistry not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        if (serviceName.isEmpty()) {
+            resp.setError(400, "Bad Request", "Service name is required");
+            return;
+        }
+        
+        LoadBalancer* loadBalancer = serviceRegistry->loadBalancer();
+        if (!loadBalancer) {
+            resp.setError(500, "LoadBalancer not available");
+            return;
+        }
+        
+        QString algorithm = serviceRegistry->getLoadBalanceAlgorithm(serviceName);
+        QList<ServiceInstance> instances = loadBalancer->getInstances(serviceName);
+        
+        QJsonArray instancesArray;
+        for (const ServiceInstance& instance : instances) {
+            QJsonObject instanceObj;
+            QString instanceId = loadBalancer->getInstanceIdByProvider(serviceName, instance.provider);
+            instanceObj["instanceId"] = instanceId;
+            instanceObj["version"] = instance.descriptor.version;
+            instanceObj["weight"] = instance.weight;
+            instanceObj["activeConnections"] = instance.activeConnections;
+            instanceObj["totalRequests"] = instance.totalRequests;
+            instanceObj["healthy"] = instance.healthy;
+            instancesArray.append(instanceObj);
+        }
+        
+        QJsonObject result;
+        result["serviceName"] = serviceName;
+        result["algorithm"] = algorithm;
+        result["enabled"] = serviceRegistry->isLoadBalanceEnabled();
+        result["instances"] = instancesArray;
+        result["instanceCount"] = instances.size();
+        
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/services/{name}/loadbalance - 配置服务负载均衡
+    server->post("/api/v1/services/{name}/loadbalance", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "service.loadbalance.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: service.loadbalance.manage");
+            return;
+        }
+        
+        ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            resp.setError(500, "ServiceRegistry not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        if (serviceName.isEmpty()) {
+            resp.setError(400, "Bad Request", "Service name is required");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString algorithm = body.value("algorithm").toString();
+        bool enabled = body.value("enabled").toBool(true);
+        
+        if (!algorithm.isEmpty()) {
+            serviceRegistry->setLoadBalanceAlgorithm(serviceName, algorithm);
+        }
+        
+        serviceRegistry->setLoadBalanceEnabled(enabled);
+        
+        QJsonObject result;
+        result["serviceName"] = serviceName;
+        result["algorithm"] = serviceRegistry->getLoadBalanceAlgorithm(serviceName);
+        result["enabled"] = serviceRegistry->isLoadBalanceEnabled();
+        result["message"] = "负载均衡配置已更新";
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/services/{name}/instances/{instanceId}/weight - 设置实例权重
+    server->post("/api/v1/services/{name}/instances/{instanceId}/weight", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "service.loadbalance.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: service.loadbalance.manage");
+            return;
+        }
+        
+        ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            resp.setError(500, "ServiceRegistry not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        QString instanceId = req.pathParams.value("instanceId");
+        
+        QJsonObject body = req.jsonBody();
+        int weight = body.value("weight").toInt(1);
+        
+        if (weight < 1) {
+            resp.setError(400, "Bad Request", "Weight must be >= 1");
+            return;
+        }
+        
+        LoadBalancer* loadBalancer = serviceRegistry->loadBalancer();
+        if (!loadBalancer) {
+            resp.setError(500, "LoadBalancer not available");
+            return;
+        }
+        
+        loadBalancer->setInstanceWeight(serviceName, instanceId, weight);
+        
+        QJsonObject result;
+        result["serviceName"] = serviceName;
+        result["instanceId"] = instanceId;
+        result["weight"] = weight;
+        result["message"] = "实例权重已更新";
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/services/{name}/instances/{instanceId}/health - 设置实例健康状态
+    server->post("/api/v1/services/{name}/instances/{instanceId}/health", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "service.loadbalance.manage")) {
+            resp.setError(403, "Forbidden", "缺少权限: service.loadbalance.manage");
+            return;
+        }
+        
+        ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            resp.setError(500, "ServiceRegistry not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        QString instanceId = req.pathParams.value("instanceId");
+        
+        QJsonObject body = req.jsonBody();
+        bool healthy = body.value("healthy").toBool(true);
+        
+        LoadBalancer* loadBalancer = serviceRegistry->loadBalancer();
+        if (!loadBalancer) {
+            resp.setError(500, "LoadBalancer not available");
+            return;
+        }
+        
+        loadBalancer->setInstanceHealth(serviceName, instanceId, healthy);
+        
+        QJsonObject result;
+        result["serviceName"] = serviceName;
+        result["instanceId"] = instanceId;
+        result["healthy"] = healthy;
+        result["message"] = QString("实例健康状态已更新为: %1").arg(healthy ? "健康" : "不健康");
         resp.setSuccess(result);
     });
 }

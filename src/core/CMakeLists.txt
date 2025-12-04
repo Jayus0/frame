@@ -13,6 +13,7 @@ set(SERVICE_SOURCES
     service/RetryPolicy.cpp
     service/DegradationPolicy.cpp
     service/FailoverManager.cpp
+    service/LoadBalancer.cpp
 )
 
 # 配置模块

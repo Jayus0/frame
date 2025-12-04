@@ -4,6 +4,7 @@
 #include "eagle/core/CircuitBreaker.h"
 #include "eagle/core/RetryPolicy.h"
 #include "eagle/core/DegradationPolicy.h"
+#include "eagle/core/LoadBalancer.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/RBAC.h"
 #include "eagle/core/RateLimiter.h"
@@ -27,6 +28,7 @@ ServiceRegistry::ServiceRegistry(QObject* parent)
     auto* d = d_func();
     d->defaultTimeoutMs = 5000;
     d->enableCircuitBreaker = true;
+    d->loadBalancer = new LoadBalancer(this);
 }
 
 ServiceRegistry::~ServiceRegistry()
@@ -70,6 +72,13 @@ bool ServiceRegistry::registerService(const ServiceDescriptor& descriptor, QObje
     d->services[descriptor.serviceName].append(desc);
     d->providers[key] = provider;
     
+    // 注册到负载均衡器
+    if (d->loadBalancer && d->enableLoadBalance) {
+        locker.unlock();  // 释放锁，避免死锁
+        d->loadBalancer->registerInstance(descriptor.serviceName, desc, provider, 1);
+        locker.relock();
+    }
+    
     Logger::info("ServiceRegistry", QString("服务注册成功: %1@%2")
         .arg(descriptor.serviceName, descriptor.version));
     
@@ -92,6 +101,16 @@ bool ServiceRegistry::unregisterService(const QString& serviceName, const QStrin
         for (const ServiceDescriptor& desc : descriptors) {
             QString key = desc.serviceName + "@" + desc.version;
             d->providers.remove(key);
+            
+            // 从负载均衡器注销
+            if (d->loadBalancer && d->enableLoadBalance) {
+                QString instanceId = d->loadBalancer->getInstanceIdByProvider(serviceName, desc.provider);
+                if (!instanceId.isEmpty()) {
+                    locker.unlock();
+                    d->loadBalancer->unregisterInstance(serviceName, instanceId);
+                    locker.relock();
+                }
+            }
         }
         d->services.remove(serviceName);
         emit serviceUnregistered(serviceName, QString());
@@ -100,8 +119,20 @@ bool ServiceRegistry::unregisterService(const QString& serviceName, const QStrin
         for (int i = descriptors.size() - 1; i >= 0; --i) {
             if (descriptors[i].version == version) {
                 QString key = serviceName + "@" + version;
+                ServiceDescriptor desc = descriptors[i];
                 d->providers.remove(key);
                 descriptors.removeAt(i);
+                
+                // 从负载均衡器注销
+                if (d->loadBalancer && d->enableLoadBalance) {
+                    QString instanceId = d->loadBalancer->getInstanceIdByProvider(serviceName, desc.provider);
+                    if (!instanceId.isEmpty()) {
+                        locker.unlock();
+                        d->loadBalancer->unregisterInstance(serviceName, instanceId);
+                        locker.relock();
+                    }
+                }
+                
                 emit serviceUnregistered(serviceName, version);
                 break;
             }
@@ -119,6 +150,15 @@ bool ServiceRegistry::unregisterService(const QString& serviceName, const QStrin
 QObject* ServiceRegistry::findService(const QString& serviceName, const QString& version) const
 {
     const auto* d = d_func();
+    
+    // 如果启用负载均衡且没有指定版本，使用负载均衡器选择实例
+    if (d->enableLoadBalance && d->loadBalancer && version.isEmpty()) {
+        ServiceInstance* instance = d->loadBalancer->selectInstance(serviceName);
+        if (instance && instance->provider) {
+            return instance->provider;
+        }
+    }
+    
     QMutexLocker locker(&d->mutex);
     
     if (!d->services.contains(serviceName)) {
@@ -246,11 +286,43 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
             }
         }
         
-        QObject* provider = findService(serviceName);
+        // 使用负载均衡器选择服务实例
+        QObject* provider = nullptr;
+        QString instanceId;
+        
+        {
+            auto* d = d_func();
+            if (d->enableLoadBalance && d->loadBalancer) {
+                ServiceInstance* instance = d->loadBalancer->selectInstance(serviceName);
+                if (instance && instance->provider) {
+                    provider = instance->provider;
+                    instanceId = d->loadBalancer->getInstanceIdByProvider(serviceName, provider);
+                    // 记录服务调用开始
+                    if (!instanceId.isEmpty()) {
+                        d->loadBalancer->onServiceCallStart(serviceName, instanceId);
+                    }
+                }
+            }
+        }
+        
+        // 如果负载均衡器没有选择到实例，使用原来的方法
+        if (!provider) {
+            provider = findService(serviceName);
+        }
+        
         if (!provider) {
             QString error = QString("Service not found: %1").arg(serviceName);
             Logger::error("ServiceRegistry", error);
             lastError = error;
+            
+            // 如果已经开始调用，需要结束调用计数
+            if (!instanceId.isEmpty()) {
+                auto* d = d_func();
+                if (d->loadBalancer) {
+                    d->loadBalancer->onServiceCallEnd(serviceName, instanceId);
+                }
+            }
+            instanceId.clear();  // 清除instanceId，避免后续重复处理
             
             // 检查是否应该重试（服务不存在通常不应该重试）
             if (retryEnabled && attemptCount <= retryConfig.maxRetries && 
@@ -372,6 +444,14 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
                 return degradedResult;
             }
             
+            // 记录服务调用结束（超时失败）
+            if (!instanceId.isEmpty()) {
+                auto* d = d_func();
+                if (d->loadBalancer) {
+                    d->loadBalancer->onServiceCallEnd(serviceName, instanceId);
+                }
+            }
+            
             emit serviceCallFailed(serviceName, error);
             return QVariant();
         }
@@ -409,12 +489,28 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
                 }
             }
             
+            // 记录服务调用结束（调用失败）
+            if (!instanceId.isEmpty()) {
+                auto* d = d_func();
+                if (d->loadBalancer) {
+                    d->loadBalancer->onServiceCallEnd(serviceName, instanceId);
+                }
+            }
+            
             emit serviceCallFailed(serviceName, error);
             return QVariant();
         }
         
         // 调用成功，保存返回值并退出重试循环
         returnValue = currentReturnValue;
+        
+        // 记录服务调用结束（成功）
+        if (!instanceId.isEmpty()) {
+            auto* d = d_func();
+            if (d->loadBalancer) {
+                d->loadBalancer->onServiceCallEnd(serviceName, instanceId);
+            }
+        }
         break;
     }
     
@@ -443,37 +539,75 @@ QVariant ServiceRegistry::callService(const QString& serviceName,
     return returnValue;
 }
 
-bool ServiceRegistry::checkServiceHealth(const QString& serviceName) const
+void ServiceRegistry::setLoadBalanceEnabled(bool enabled)
 {
-    QObject* provider = findService(serviceName);
-    if (!provider) {
-        return false;
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->enableLoadBalance = enabled;
+    if (d->loadBalancer) {
+        d->loadBalancer->setEnabled(enabled);
     }
-    
-    // 检查熔断器状态
-    const auto* d = d_func();
-    if (d->enableCircuitBreaker) {
-        QMutexLocker locker(&d->mutex);
-        CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
-        if (breaker && breaker->state() == CircuitState::Open) {
-            return false;  // 熔断器开启，认为不健康
-        }
-    }
-    
-    // 检查健康状态（如果有healthCheck方法）
-    const QMetaObject* metaObj = provider->metaObject();
-    int healthIndex = metaObj->indexOfMethod("healthCheck()");
-    if (healthIndex != -1) {
-        QMetaMethod healthMethod = metaObj->method(healthIndex);
-        bool isHealthy = false;
-        QGenericReturnArgument retArg = Q_RETURN_ARG(bool, isHealthy);
-        healthMethod.invoke(provider, retArg);
-        return isHealthy;
-    }
-    
-    // 默认认为服务健康
-    return true;
+    Logger::info("ServiceRegistry", QString("负载均衡%1").arg(enabled ? "启用" : "禁用"));
 }
+
+bool ServiceRegistry::isLoadBalanceEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->enableLoadBalance;
+}
+
+void ServiceRegistry::setLoadBalanceAlgorithm(const QString& serviceName, const QString& algorithm)
+{
+    auto* d = d_func();
+    if (!d->loadBalancer) {
+        Logger::warning("ServiceRegistry", "负载均衡器未初始化");
+        return;
+    }
+    
+    LoadBalanceAlgorithm algo = LoadBalanceAlgorithm::RoundRobin;
+    if (algorithm == "weighted_round_robin" || algorithm == "weighted") {
+        algo = LoadBalanceAlgorithm::WeightedRoundRobin;
+    } else if (algorithm == "least_connections" || algorithm == "least") {
+        algo = LoadBalanceAlgorithm::LeastConnections;
+    } else if (algorithm == "random") {
+        algo = LoadBalanceAlgorithm::Random;
+    } else if (algorithm == "ip_hash" || algorithm == "hash") {
+        algo = LoadBalanceAlgorithm::IPHash;
+    }
+    
+    d->loadBalancer->setAlgorithm(serviceName, algo);
+}
+
+QString ServiceRegistry::getLoadBalanceAlgorithm(const QString& serviceName) const
+{
+    const auto* d = d_func();
+    if (!d->loadBalancer) {
+        return "round_robin";
+    }
+    
+    LoadBalanceAlgorithm algo = d->loadBalancer->getAlgorithm(serviceName);
+    switch (algo) {
+    case LoadBalanceAlgorithm::WeightedRoundRobin:
+        return "weighted_round_robin";
+    case LoadBalanceAlgorithm::LeastConnections:
+        return "least_connections";
+    case LoadBalanceAlgorithm::Random:
+        return "random";
+    case LoadBalanceAlgorithm::IPHash:
+        return "ip_hash";
+    default:
+        return "round_robin";
+    }
+}
+
+LoadBalancer* ServiceRegistry::loadBalancer() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->loadBalancer;
+}
+
 
 void ServiceRegistry::setDefaultTimeout(int timeoutMs)
 {

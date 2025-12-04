@@ -19,7 +19,8 @@ SERVICE_SOURCES += \
     ../src/core/service/CircuitBreaker.cpp \
     ../src/core/service/RetryPolicy.cpp \
     ../src/core/service/DegradationPolicy.cpp \
-    ../src/core/service/FailoverManager.cpp
+    ../src/core/service/FailoverManager.cpp \
+    ../src/core/service/LoadBalancer.cpp
 
 # 配置模块
 CONFIG_SOURCES += \

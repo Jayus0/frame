@@ -23,6 +23,7 @@
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
 #include "eagle/core/PluginSignature.h"
+#include "eagle/core/LoadBalancer.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -83,6 +84,9 @@ public:
         QCommandLineOption signatureOption("signature", "Plugin signature management");
         parser.addOption(signatureOption);
         
+        QCommandLineOption loadbalanceOption("loadbalance", "Load balancing management");
+        parser.addOption(loadbalanceOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -116,6 +120,8 @@ public:
             return handleSchema(args.mid(1));
         } else if (parser.isSet(signatureOption) || command == "signature") {
             return handleSignature(args.mid(1));
+        } else if (parser.isSet(loadbalanceOption) || command == "loadbalance") {
+            return handleLoadBalance(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1506,6 +1512,130 @@ private:
         } else {
             std::cerr << "Unknown signature command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli signature sign|verify|certificates'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleLoadBalance(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli loadbalance <show|set|instances> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            std::cerr << "Error: ServiceRegistry not available" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::LoadBalancer* loadBalancer = serviceRegistry->loadBalancer();
+        if (!loadBalancer) {
+            std::cerr << "Error: LoadBalancer not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "show") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli loadbalance show <service-name>" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            QString algorithm = serviceRegistry->getLoadBalanceAlgorithm(serviceName);
+            QList<Eagle::Core::ServiceInstance> instances = loadBalancer->getInstances(serviceName);
+            
+            std::cout << "Load Balance Configuration for " << serviceName.toStdString() << ":" << std::endl;
+            std::cout << "  Algorithm: " << algorithm.toStdString() << std::endl;
+            std::cout << "  Enabled: " << (serviceRegistry->isLoadBalanceEnabled() ? "Yes" : "No") << std::endl;
+            std::cout << "  Instances: " << instances.size() << std::endl;
+            std::cout << std::endl;
+            
+            for (const Eagle::Core::ServiceInstance& instance : instances) {
+                QString instanceId = loadBalancer->getInstanceIdByProvider(serviceName, instance.provider);
+                std::cout << "  Instance: " << instanceId.toStdString() << std::endl;
+                std::cout << "    Version: " << instance.descriptor.version.toStdString() << std::endl;
+                std::cout << "    Weight: " << instance.weight << std::endl;
+                std::cout << "    Active Connections: " << instance.activeConnections << std::endl;
+                std::cout << "    Total Requests: " << instance.totalRequests << std::endl;
+                std::cout << "    Healthy: " << (instance.healthy ? "Yes" : "No") << std::endl;
+                std::cout << std::endl;
+            }
+            return 0;
+        } else if (subCommand == "set") {
+            if (args.size() < 3) {
+                std::cerr << "Usage: eagle-cli loadbalance set <service-name> <algorithm> [--enabled]" << std::endl;
+                std::cerr << "  Algorithms: round_robin, weighted_round_robin, least_connections, random, ip_hash" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            QString algorithm = args[2];
+            bool enabled = true;
+            
+            for (int i = 3; i < args.size(); ++i) {
+                if (args[i] == "--enabled") {
+                    enabled = true;
+                } else if (args[i] == "--disabled") {
+                    enabled = false;
+                }
+            }
+            
+            serviceRegistry->setLoadBalanceAlgorithm(serviceName, algorithm);
+            serviceRegistry->setLoadBalanceEnabled(enabled);
+            
+            std::cout << "Load balance configuration updated for " << serviceName.toStdString() << std::endl;
+            return 0;
+        } else if (subCommand == "instances") {
+            if (args.size() < 3) {
+                std::cerr << "Usage: eagle-cli loadbalance instances <service-name> <weight|health> [instance-id] [value]" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            QString action = args[2];
+            
+            if (action == "weight") {
+                if (args.size() < 5) {
+                    std::cerr << "Usage: eagle-cli loadbalance instances <service-name> weight <instance-id> <weight>" << std::endl;
+                    return 1;
+                }
+                
+                QString instanceId = args[3];
+                int weight = args[4].toInt();
+                
+                loadBalancer->setInstanceWeight(serviceName, instanceId, weight);
+                std::cout << "Instance weight updated: " << instanceId.toStdString() << " -> " << weight << std::endl;
+                return 0;
+            } else if (action == "health") {
+                if (args.size() < 5) {
+                    std::cerr << "Usage: eagle-cli loadbalance instances <service-name> health <instance-id> <true|false>" << std::endl;
+                    return 1;
+                }
+                
+                QString instanceId = args[3];
+                bool healthy = args[4].toLower() == "true" || args[4] == "1";
+                
+                loadBalancer->setInstanceHealth(serviceName, instanceId, healthy);
+                std::cout << "Instance health updated: " << instanceId.toStdString() 
+                          << " -> " << (healthy ? "healthy" : "unhealthy") << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Unknown action: " << action.toStdString() << std::endl;
+                std::cerr << "Use 'eagle-cli loadbalance instances <service-name> weight|health'" << std::endl;
+                return 1;
+            }
+        } else {
+            std::cerr << "Unknown loadbalance command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli loadbalance show|set|instances'" << std::endl;
             return 1;
         }
     }
