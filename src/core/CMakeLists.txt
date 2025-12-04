@@ -16,6 +16,8 @@ set(SOURCES
     RateLimiter.cpp
     ApiKeyManager.cpp
     SessionManager.cpp
+    ApiServer.cpp
+    ApiRoutes.cpp
 )
 
 set(HEADERS
@@ -38,6 +40,8 @@ set(HEADERS
     ${CMAKE_SOURCE_DIR}/include/eagle/core/RateLimiter.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/ApiKeyManager.h
     ${CMAKE_SOURCE_DIR}/include/eagle/core/SessionManager.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/ApiServer.h
+    ${CMAKE_SOURCE_DIR}/include/eagle/core/ApiRoutes.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})

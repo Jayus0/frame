@@ -1,6 +1,7 @@
 #include "eagle/core/Framework.h"
 #include "Framework_p.h"
 #include "eagle/core/Logger.h"
+#include "eagle/core/ApiRoutes.h"
 #include <QtCore/QStandardPaths>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -68,6 +69,7 @@ bool Framework::initialize(const QString& configPath)
     d->rateLimiter = new RateLimiter(this);
     d->apiKeyManager = new ApiKeyManager(this);
     d->sessionManager = new SessionManager(this);
+    d->apiServer = new ApiServer(this);
     
     // 配置ServiceRegistry使用RBAC和限流器
     if (d->serviceRegistry) {
@@ -135,6 +137,25 @@ bool Framework::initialize(const QString& configPath)
     bool signatureRequired = securityConfig["plugin_signature_required"].toBool();
     d->pluginManager->setPluginSignatureRequired(signatureRequired);
     
+    // 初始化API服务器
+    if (d->apiServer) {
+        d->apiServer->setFramework(this);
+        registerApiRoutes(d->apiServer);
+        
+        // 从配置中读取API服务器端口
+        QVariantMap apiConfig = frameworkConfig["api"].toMap();
+        quint16 apiPort = apiConfig.value("port", 8080).toUInt();
+        bool apiEnabled = apiConfig.value("enabled", false).toBool();
+        
+        if (apiEnabled) {
+            if (d->apiServer->start(apiPort)) {
+                Logger::info("Framework", QString("API服务器已启动，端口: %1").arg(apiPort));
+            } else {
+                Logger::warning("Framework", "API服务器启动失败");
+            }
+        }
+    }
+    
     d->initialized = true;
     
     Logger::info("Framework", "框架初始化完成");
@@ -161,7 +182,15 @@ void Framework::shutdown()
         }
     }
     
+    // 停止API服务器
+    if (d->apiServer) {
+        d->apiServer->stop();
+    }
+    
     // 清理组件
+    delete d->apiServer;
+    d->apiServer = nullptr;
+    
     delete d->alertSystem;
     d->alertSystem = nullptr;
     
@@ -256,6 +285,11 @@ ApiKeyManager* Framework::apiKeyManager() const
 SessionManager* Framework::sessionManager() const
 {
     return d->sessionManager;
+}
+
+ApiServer* Framework::apiServer() const
+{
+    return d->apiServer;
 }
 
 QString Framework::version() const

@@ -12,6 +12,7 @@
 #include "eagle/core/RateLimiter.h"
 #include "eagle/core/ApiKeyManager.h"
 #include "eagle/core/SessionManager.h"
+#include "eagle/core/ApiServer.h"
 
 namespace Eagle {
 namespace Core {
@@ -29,6 +30,7 @@ public:
     RateLimiter* rateLimiter;
     ApiKeyManager* apiKeyManager;
     SessionManager* sessionManager;
+    ApiServer* apiServer;
     bool initialized;
     
     Private() 
@@ -43,6 +45,7 @@ public:
         , rateLimiter(nullptr)
         , apiKeyManager(nullptr)
         , sessionManager(nullptr)
+        , apiServer(nullptr)
         , initialized(false)
     {
     }

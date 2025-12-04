@@ -13,6 +13,7 @@
 #include "RateLimiter.h"
 #include "ApiKeyManager.h"
 #include "SessionManager.h"
+#include "ApiServer.h"
 
 namespace Eagle {
 namespace Core {
@@ -45,6 +46,7 @@ public:
     RateLimiter* rateLimiter() const;
     ApiKeyManager* apiKeyManager() const;
     SessionManager* sessionManager() const;
+    ApiServer* apiServer() const;
     
     // 框架信息
     QString version() const;
