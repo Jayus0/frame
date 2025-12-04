@@ -127,7 +127,7 @@ private:
     
     void updateResourceUsage(const QString& pluginId);
     bool checkResourceLimits(const QString& pluginId, const ResourceUsage& usage, const ResourceLimits& limits) const;
-    void handleResourceLimitExceeded(const QString& pluginId, const QString& resourceType, double currentValue, double limitValue) const;
+    void handleResourceLimitExceeded(const QString& pluginId, const QString& resourceType, double currentValue, double limitValue);
     qint64 getPluginMemoryUsage(const QString& pluginId) const;
     double getPluginCpuUsage(const QString& pluginId) const;
     qint64 getPluginThreadCount(const QString& pluginId) const;

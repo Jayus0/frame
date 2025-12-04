@@ -271,7 +271,8 @@ bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const Resourc
         qint64 maxMemoryBytes = limits.maxMemoryMB * 1024 * 1024;
         if (usage.memoryBytes > maxMemoryBytes) {
             exceeded = true;
-            handleResourceLimitExceeded(pluginId, "memory", 
+            // 在const方法中使用const_cast调用非const方法，因为记录事件不影响逻辑上的const性
+            const_cast<ResourceMonitor*>(this)->handleResourceLimitExceeded(pluginId, "memory", 
                                        static_cast<double>(usage.memoryBytes) / 1024 / 1024,
                                        static_cast<double>(limits.maxMemoryMB));
         }
@@ -281,7 +282,7 @@ bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const Resourc
     if (limits.maxCpuPercent > 0) {
         if (usage.cpuPercent > limits.maxCpuPercent) {
             exceeded = true;
-            handleResourceLimitExceeded(pluginId, "cpu", usage.cpuPercent, static_cast<double>(limits.maxCpuPercent));
+            const_cast<ResourceMonitor*>(this)->handleResourceLimitExceeded(pluginId, "cpu", usage.cpuPercent, static_cast<double>(limits.maxCpuPercent));
         }
     }
     
@@ -289,7 +290,7 @@ bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const Resourc
     if (limits.maxThreads > 0) {
         if (usage.threadCount > limits.maxThreads) {
             exceeded = true;
-            handleResourceLimitExceeded(pluginId, "threads", 
+            const_cast<ResourceMonitor*>(this)->handleResourceLimitExceeded(pluginId, "threads", 
                                        static_cast<double>(usage.threadCount),
                                        static_cast<double>(limits.maxThreads));
         }
@@ -299,7 +300,7 @@ bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const Resourc
 }
 
 void ResourceMonitor::handleResourceLimitExceeded(const QString& pluginId, const QString& resourceType, 
-                                                   double currentValue, double limitValue) const
+                                                   double currentValue, double limitValue)
 {
     ResourceLimitExceeded event;
     event.pluginId = pluginId;
@@ -307,7 +308,7 @@ void ResourceMonitor::handleResourceLimitExceeded(const QString& pluginId, const
     event.currentValue = currentValue;
     event.limitValue = limitValue;
     
-    auto* d = const_cast<Private*>(d_func());
+    auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     
     d->limitExceededEvents[pluginId].append(event);
