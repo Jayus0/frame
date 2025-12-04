@@ -132,9 +132,12 @@ QList<ServiceInstance*> LoadBalancer::getHealthyInstances(const QString& service
         return healthyInstances;
     }
     
-    for (auto it = d->instances[serviceName].begin(); it != d->instances[serviceName].end(); ++it) {
+    // 使用const_cast，因为虽然方法是const，但返回的指针用于非const操作
+    // 这是安全的，因为调用者知道他们正在修改实例状态
+    const QMap<QString, ServiceInstance>& instances = d->instances[serviceName];
+    for (auto it = instances.begin(); it != instances.end(); ++it) {
         if (it->healthy && it->isValid()) {
-            healthyInstances.append(&(*it));
+            healthyInstances.append(const_cast<ServiceInstance*>(&(*it)));
         }
     }
     
