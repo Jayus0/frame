@@ -28,7 +28,10 @@ SOURCES += \
     ../src/core/ApiServer.cpp \
     ../src/core/ApiRoutes.cpp \
     ../src/core/RetryPolicy.cpp \
-    ../src/core/DegradationPolicy.cpp
+    ../src/core/DegradationPolicy.cpp \
+    ../src/core/NotificationChannel.cpp \
+    ../src/core/EmailChannel.cpp \
+    ../src/core/WebhookChannel.cpp
 
 # 头文件
 HEADERS += \
@@ -69,7 +72,10 @@ HEADERS += \
     ../include/eagle/core/RetryPolicy.h \
     ../src/core/RetryPolicy_p.h \
     ../include/eagle/core/DegradationPolicy.h \
-    ../src/core/DegradationPolicy_p.h
+    ../src/core/DegradationPolicy_p.h \
+    ../include/eagle/core/NotificationChannel.h \
+    ../include/eagle/core/EmailChannel.h \
+    ../include/eagle/core/WebhookChannel.h
 
 # 包含目录
 INCLUDEPATH += $$PWD/../include

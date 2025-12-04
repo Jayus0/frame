@@ -20,6 +20,9 @@ set(SOURCES
     ApiRoutes.cpp
     RetryPolicy.cpp
     DegradationPolicy.cpp
+    NotificationChannel.cpp
+    EmailChannel.cpp
+    WebhookChannel.cpp
 )
 
 # 使用相对路径（相对于src/core目录），这样Qt Creator会显示相对路径而不是绝对路径
@@ -48,6 +51,9 @@ set(HEADERS
     ../../include/eagle/core/ApiRoutes.h
     ../../include/eagle/core/RetryPolicy.h
     ../../include/eagle/core/DegradationPolicy.h
+    ../../include/eagle/core/NotificationChannel.h
+    ../../include/eagle/core/EmailChannel.h
+    ../../include/eagle/core/WebhookChannel.h
 )
 
 add_library(EagleCore SHARED ${SOURCES} ${HEADERS})

@@ -9,6 +9,7 @@
 #include <functional>
 #include "eagle/core/AlertSystem.h"
 #include "eagle/core/PerformanceMonitor.h"
+#include "eagle/core/NotificationChannel.h"
 
 namespace Eagle {
 namespace Core {
@@ -27,6 +28,11 @@ public:
     
     // 规则触发时间记录（用于持续时间检查）
     QMap<QString, QDateTime> ruleTriggerTimes;  // ruleId -> triggerTime
+    
+    // 通知渠道
+    QMap<QString, NotificationChannel*> notificationChannels;  // channelName -> channel
+    bool notificationEnabled = true;
+    QList<AlertLevel> notificationLevels;  // 需要通知的告警级别
 };
 
 } // namespace Core

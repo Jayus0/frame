@@ -2,6 +2,7 @@
 #include "AlertSystem_p.h"
 #include "eagle/core/PerformanceMonitor.h"
 #include "eagle/core/Logger.h"
+#include "eagle/core/NotificationChannel.h"
 #include <QtCore/QMutexLocker>
 #include <QtCore/QDateTime>
 #include <QtCore/QUuid>
@@ -205,6 +206,89 @@ void AlertSystem::registerAlertHandler(std::function<void(const AlertRecord&)> h
     Logger::info("AlertSystem", "注册告警处理器");
 }
 
+bool AlertSystem::addNotificationChannel(NotificationChannel* channel)
+{
+    if (!channel) {
+        return false;
+    }
+    
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    QString channelName = channel->name();
+    if (d->notificationChannels.contains(channelName)) {
+        Logger::warning("AlertSystem", QString("通知渠道已存在: %1").arg(channelName));
+        return false;
+    }
+    
+    d->notificationChannels[channelName] = channel;
+    channel->setParent(this);
+    
+    Logger::info("AlertSystem", QString("添加通知渠道: %1").arg(channelName));
+    return true;
+}
+
+bool AlertSystem::removeNotificationChannel(const QString& channelName)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    if (!d->notificationChannels.contains(channelName)) {
+        return false;
+    }
+    
+    NotificationChannel* channel = d->notificationChannels[channelName];
+    d->notificationChannels.remove(channelName);
+    channel->deleteLater();
+    
+    Logger::info("AlertSystem", QString("移除通知渠道: %1").arg(channelName));
+    return true;
+}
+
+NotificationChannel* AlertSystem::getNotificationChannel(const QString& channelName) const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->notificationChannels.value(channelName, nullptr);
+}
+
+QStringList AlertSystem::getNotificationChannelNames() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->notificationChannels.keys();
+}
+
+void AlertSystem::setNotificationEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->notificationEnabled = enabled;
+    Logger::info("AlertSystem", QString("通知功能%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool AlertSystem::isNotificationEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->notificationEnabled;
+}
+
+void AlertSystem::setNotificationLevels(const QList<AlertLevel>& levels)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->notificationLevels = levels;
+    Logger::info("AlertSystem", QString("设置通知级别: %1个级别").arg(levels.size()));
+}
+
+QList<AlertLevel> AlertSystem::getNotificationLevels() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->notificationLevels;
+}
+
 void AlertSystem::onMetricUpdated(const QString& name, double value)
 {
     if (!isEnabled()) {
@@ -270,6 +354,33 @@ void AlertSystem::checkRules(const QString& metricName, double value)
                 // 调用处理器
                 if (d->alertHandler) {
                     d->alertHandler(alert);
+                }
+                
+                // 发送通知
+                if (d->notificationEnabled) {
+                    // 检查是否需要通知（根据级别过滤）
+                    bool shouldNotify = d->notificationLevels.isEmpty() || 
+                                       d->notificationLevels.contains(alert.level);
+                    
+                    if (shouldNotify) {
+                        NotificationMessage msg;
+                        msg.title = rule.name;
+                        msg.content = alert.message;
+                        msg.level = alert.level;
+                        msg.ruleId = rule.id;
+                        msg.metricName = metricName;
+                        msg.value = value;
+                        msg.threshold = rule.threshold;
+                        msg.timestamp = alert.triggerTime;
+                        msg.metadata["alertId"] = alert.id;
+                        
+                        // 发送到所有通知渠道
+                        for (NotificationChannel* channel : d->notificationChannels.values()) {
+                            if (channel && channel->isEnabled()) {
+                                channel->send(msg);
+                            }
+                        }
+                    }
                 }
                 
                 emit alertTriggered(alert);

@@ -14,6 +14,7 @@ namespace Eagle {
 namespace Core {
 
 class PerformanceMonitor;
+class NotificationChannel;
 
 /**
  * @brief 告警级别
@@ -128,6 +129,18 @@ public:
     
     // 注册告警处理器
     void registerAlertHandler(std::function<void(const AlertRecord&)> handler);
+    
+    // 通知渠道管理
+    bool addNotificationChannel(NotificationChannel* channel);
+    bool removeNotificationChannel(const QString& channelName);
+    NotificationChannel* getNotificationChannel(const QString& channelName) const;
+    QStringList getNotificationChannelNames() const;
+    
+    // 通知策略配置
+    void setNotificationEnabled(bool enabled);
+    bool isNotificationEnabled() const;
+    void setNotificationLevels(const QList<AlertLevel>& levels);
+    QList<AlertLevel> getNotificationLevels() const;
     
 signals:
     void alertTriggered(const AlertRecord& alert);
