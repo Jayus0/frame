@@ -10,14 +10,11 @@
 namespace Eagle {
 namespace Core {
 
-struct ResourceLimits {
-    int maxMemoryMB = -1;
-    int maxCpuPercent = -1;
-};
-
+// 使用ResourceMonitor中的ResourceLimits，不再重复定义
 struct PluginIsolationData {
     int exceptionCount = 0;
-    ResourceLimits limits;
+    int maxMemoryMB = -1;  // 保持兼容性
+    int maxCpuPercent = -1;  // 保持兼容性
     std::function<void(const QString&)> exceptionHandler;
 };
 
@@ -81,8 +78,8 @@ void PluginIsolation::setResourceLimits(const QString& pluginId, int maxMemoryMB
     
     QMutexLocker locker(&s_mutex);
     PluginIsolationData& data = s_pluginData[pluginId];
-    data.limits.maxMemoryMB = maxMemoryMB;
-    data.limits.maxCpuPercent = maxCpuPercent;
+    data.maxMemoryMB = maxMemoryMB;
+    data.maxCpuPercent = maxCpuPercent;
     
     // 同步到ResourceMonitor
     if (s_resourceMonitor) {
@@ -109,10 +106,9 @@ bool PluginIsolation::checkResourceLimits(const QString& pluginId)
     }
     
     const PluginIsolationData& data = s_pluginData[pluginId];
-    const ResourceLimits& limits = data.limits;
     
     // 如果没有限制，直接返回
-    if (limits.maxMemoryMB < 0 && limits.maxCpuPercent < 0) {
+    if (data.maxMemoryMB < 0 && data.maxCpuPercent < 0) {
         return true;
     }
     

@@ -262,7 +262,7 @@ void ResourceMonitor::updateResourceUsage(const QString& pluginId)
     emit resourceUsageUpdated(pluginId, usage);
 }
 
-bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const ResourceUsage& usage, const ResourceLimits& limits)
+bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const ResourceUsage& usage, const ResourceLimits& limits) const
 {
     bool exceeded = false;
     
@@ -325,6 +325,7 @@ void ResourceMonitor::handleResourceLimitExceeded(const QString& pluginId, const
 
 qint64 ResourceMonitor::getPluginMemoryUsage(const QString& pluginId) const
 {
+    Q_UNUSED(pluginId);
     // 简化实现：获取进程内存使用
     // 实际应该获取插件特定的内存使用（需要插件进程分离或内存跟踪）
     
@@ -351,10 +352,9 @@ qint64 ResourceMonitor::getPluginMemoryUsage(const QString& pluginId) const
 
 double ResourceMonitor::getPluginCpuUsage(const QString& pluginId) const
 {
+    Q_UNUSED(pluginId);
     // 简化实现：获取进程CPU使用率
     // 实际应该获取插件特定的CPU使用（需要插件进程分离或CPU跟踪）
-    
-    Q_UNUSED(pluginId);
     
     // 这里简化实现，实际应该跟踪CPU时间
     // 可以通过/proc/self/stat获取进程CPU时间，然后计算使用率
@@ -363,10 +363,9 @@ double ResourceMonitor::getPluginCpuUsage(const QString& pluginId) const
 
 qint64 ResourceMonitor::getPluginThreadCount(const QString& pluginId) const
 {
+    Q_UNUSED(pluginId);
     // 简化实现：获取进程线程数
     // 实际应该获取插件特定的线程数（需要线程跟踪）
-    
-    Q_UNUSED(pluginId);
     
 #ifdef __linux__
     QFile statusFile("/proc/self/status");
