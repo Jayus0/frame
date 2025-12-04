@@ -299,7 +299,7 @@ bool ResourceMonitor::checkResourceLimits(const QString& pluginId, const Resourc
 }
 
 void ResourceMonitor::handleResourceLimitExceeded(const QString& pluginId, const QString& resourceType, 
-                                                   double currentValue, double limitValue)
+                                                   double currentValue, double limitValue) const
 {
     ResourceLimitExceeded event;
     event.pluginId = pluginId;
@@ -307,7 +307,7 @@ void ResourceMonitor::handleResourceLimitExceeded(const QString& pluginId, const
     event.currentValue = currentValue;
     event.limitValue = limitValue;
     
-    auto* d = d_func();
+    auto* d = const_cast<Private*>(d_func());
     QMutexLocker locker(&d->mutex);
     
     d->limitExceededEvents[pluginId].append(event);

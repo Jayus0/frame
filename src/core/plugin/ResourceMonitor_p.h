@@ -20,7 +20,7 @@ public:
     int monitoringIntervalMs;
     QMap<QString, ResourceLimits> pluginLimits;  // pluginId -> limits
     QMap<QString, ResourceUsage> pluginUsage;   // pluginId -> usage
-    QMap<QString, QList<ResourceLimitExceeded>> limitExceededEvents;  // pluginId -> events
+    mutable QMap<QString, QList<ResourceLimitExceeded>> limitExceededEvents;  // pluginId -> events (mutable for const methods)
     QTimer* monitoringTimer;
     mutable QMutex mutex;
     
