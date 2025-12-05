@@ -23,6 +23,7 @@
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
 #include "eagle/core/ConfigVersion.h"
+#include "eagle/core/ConfigFormat.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
 #include "eagle/core/AsyncServiceCall.h"
@@ -134,6 +135,8 @@ public:
             return handleConfigVersion(args.mid(1));
         } else if (parser.isSet(asyncOption) || command == "async") {
             return handleAsync(args.mid(1));
+        } else if (command == "config" && args.size() > 0 && args[0] == "format") {
+            return handleConfigFormat(args.mid(2));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1915,6 +1918,160 @@ private:
         } else {
             std::cerr << "Unknown async command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli async call|wait|batch'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleConfigFormat(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli config format <load|save|convert> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            std::cerr << "Error: ConfigManager not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "load") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli config format load <file-path> [--format json|yaml|ini|auto]" << std::endl;
+                return 1;
+            }
+            
+            QString filePath = args[1];
+            QString formatStr = "auto";
+            
+            for (int i = 2; i < args.size(); ++i) {
+                if (args[i] == "--format" && i + 1 < args.size()) {
+                    formatStr = args[++i].toLower();
+                }
+            }
+            
+            Eagle::Core::ConfigFormat format = Eagle::Core::ConfigFormat::JSON;
+            if (formatStr == "yaml" || formatStr == "yml") {
+                format = Eagle::Core::ConfigFormat::YAML;
+            } else if (formatStr == "ini" || formatStr == "conf" || formatStr == "cfg") {
+                format = Eagle::Core::ConfigFormat::INI;
+            } else if (formatStr == "auto") {
+                format = Eagle::Core::ConfigFormatParser::formatFromExtension(filePath);
+            }
+            
+            bool success = configManager->loadFromFile(filePath, Eagle::Core::ConfigManager::Global, format);
+            
+            if (success) {
+                std::cout << "Config loaded successfully from: " << filePath.toStdString() << std::endl;
+                std::cout << "Format: " << formatStr.toStdString() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: Failed to load config from: " << filePath.toStdString() << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "save") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli config format save <file-path> [--format json|yaml|ini|auto]" << std::endl;
+                return 1;
+            }
+            
+            QString filePath = args[1];
+            QString formatStr = "auto";
+            
+            for (int i = 2; i < args.size(); ++i) {
+                if (args[i] == "--format" && i + 1 < args.size()) {
+                    formatStr = args[++i].toLower();
+                }
+            }
+            
+            Eagle::Core::ConfigFormat format = Eagle::Core::ConfigFormat::JSON;
+            if (formatStr == "yaml" || formatStr == "yml") {
+                format = Eagle::Core::ConfigFormat::YAML;
+            } else if (formatStr == "ini" || formatStr == "conf" || formatStr == "cfg") {
+                format = Eagle::Core::ConfigFormat::INI;
+            } else if (formatStr == "auto") {
+                format = Eagle::Core::ConfigFormatParser::formatFromExtension(filePath);
+            }
+            
+            bool success = configManager->saveToFile(filePath, Eagle::Core::ConfigManager::Global, format);
+            
+            if (success) {
+                std::cout << "Config saved successfully to: " << filePath.toStdString() << std::endl;
+                std::cout << "Format: " << formatStr.toStdString() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: Failed to save config to: " << filePath.toStdString() << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "convert") {
+            if (args.size() < 4) {
+                std::cerr << "Usage: eagle-cli config format convert <input-file> <output-file> [--source-format json|yaml|ini] [--target-format json|yaml|ini]" << std::endl;
+                return 1;
+            }
+            
+            QString inputFile = args[1];
+            QString outputFile = args[2];
+            QString sourceFormatStr = "auto";
+            QString targetFormatStr = "auto";
+            
+            for (int i = 3; i < args.size(); ++i) {
+                if (args[i] == "--source-format" && i + 1 < args.size()) {
+                    sourceFormatStr = args[++i].toLower();
+                } else if (args[i] == "--target-format" && i + 1 < args.size()) {
+                    targetFormatStr = args[++i].toLower();
+                }
+            }
+            
+            Eagle::Core::ConfigFormat sourceFormat = Eagle::Core::ConfigFormatParser::formatFromExtension(inputFile);
+            if (sourceFormatStr != "auto") {
+                if (sourceFormatStr == "yaml" || sourceFormatStr == "yml") {
+                    sourceFormat = Eagle::Core::ConfigFormat::YAML;
+                } else if (sourceFormatStr == "ini" || sourceFormatStr == "conf" || sourceFormatStr == "cfg") {
+                    sourceFormat = Eagle::Core::ConfigFormat::INI;
+                } else if (sourceFormatStr == "json") {
+                    sourceFormat = Eagle::Core::ConfigFormat::JSON;
+                }
+            }
+            
+            Eagle::Core::ConfigFormat targetFormat = Eagle::Core::ConfigFormatParser::formatFromExtension(outputFile);
+            if (targetFormatStr != "auto") {
+                if (targetFormatStr == "yaml" || targetFormatStr == "yml") {
+                    targetFormat = Eagle::Core::ConfigFormat::YAML;
+                } else if (targetFormatStr == "ini" || targetFormatStr == "conf" || targetFormatStr == "cfg") {
+                    targetFormat = Eagle::Core::ConfigFormat::INI;
+                } else if (targetFormatStr == "json") {
+                    targetFormat = Eagle::Core::ConfigFormat::JSON;
+                }
+            }
+            
+            QVariantMap config = Eagle::Core::ConfigFormatParser::loadFromFile(inputFile, sourceFormat);
+            if (config.isEmpty()) {
+                std::cerr << "Error: Failed to load config from: " << inputFile.toStdString() << std::endl;
+                return 1;
+            }
+            
+            bool success = Eagle::Core::ConfigFormatParser::saveToFile(config, outputFile, targetFormat);
+            
+            if (success) {
+                std::cout << "Config converted successfully:" << std::endl;
+                std::cout << "  From: " << inputFile.toStdString() << " (" << sourceFormatStr.toStdString() << ")" << std::endl;
+                std::cout << "  To: " << outputFile.toStdString() << " (" << targetFormatStr.toStdString() << ")" << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: Failed to save config to: " << outputFile.toStdString() << std::endl;
+                return 1;
+            }
+        } else {
+            std::cerr << "Unknown config format command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli config format load|save|convert'" << std::endl;
             return 1;
         }
     }

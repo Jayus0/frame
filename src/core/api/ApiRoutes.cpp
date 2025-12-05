@@ -19,6 +19,7 @@
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
 #include "eagle/core/ConfigVersion.h"
+#include "eagle/core/ConfigFormat.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
 #include "eagle/core/AsyncServiceCall.h"
