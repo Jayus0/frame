@@ -130,6 +130,7 @@ target_link_libraries(EagleCore
     Qt5::Core
     Qt5::Widgets
     Qt5::Network
+    Qt5::Concurrent
 )
 
 target_include_directories(EagleCore PUBLIC
