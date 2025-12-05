@@ -2093,6 +2093,106 @@ private:
     }
 };
 
+int handleAudit(const QStringList& args) {
+    if (args.isEmpty()) {
+        std::cerr << "Usage: eagle-cli audit <command> [options]" << std::endl;
+        std::cerr << "Commands:" << std::endl;
+        std::cerr << "  verify [--file=<path>]  - Verify log integrity" << std::endl;
+        std::cerr << "  report [--file=<path>]  - Get integrity report" << std::endl;
+        std::cerr << "  config <enable|disable> - Configure tamper protection" << std::endl;
+        return 1;
+    }
+    
+    QString subCommand = args.first();
+    
+    if (!Framework::instance()) {
+        Framework::instance()->initialize();
+    }
+    
+    Framework* framework = Framework::instance();
+    if (!framework || !framework->auditLogManager()) {
+        std::cerr << "Error: Framework or AuditLogManager not initialized" << std::endl;
+        return 1;
+    }
+    
+    AuditLogManager* auditLog = framework->auditLogManager();
+    
+    if (subCommand == "verify") {
+        QString logFilePath;
+        for (int i = 1; i < args.size(); ++i) {
+            if (args[i].startsWith("--file=")) {
+                logFilePath = args[i].mid(7);
+            } else if (args[i] == "--file" && i + 1 < args.size()) {
+                logFilePath = args[++i];
+            }
+        }
+        
+        bool isValid = auditLog->verifyLogIntegrity(logFilePath);
+        
+        std::cout << "Log Integrity Verification:" << std::endl;
+        std::cout << "  Status: " << (isValid ? "VALID" : "INVALID") << std::endl;
+        std::cout << "  Tamper Protection: " << (auditLog->isTamperProtectionEnabled() ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "  Last Entry Hash: " << auditLog->getLastEntryHash().toStdString() << std::endl;
+        
+        if (!isValid) {
+            std::cerr << "Warning: Log integrity verification failed!" << std::endl;
+            return 1;
+        }
+        
+        return 0;
+    } else if (subCommand == "report") {
+        QString logFilePath;
+        for (int i = 1; i < args.size(); ++i) {
+            if (args[i].startsWith("--file=")) {
+                logFilePath = args[i].mid(7);
+            } else if (args[i] == "--file" && i + 1 < args.size()) {
+                logFilePath = args[++i];
+            }
+        }
+        
+        QVariantMap report = auditLog->getIntegrityReport(logFilePath);
+        
+        std::cout << "=== Audit Log Integrity Report ===" << std::endl;
+        std::cout << "Log File: " << report.value("logFilePath").toString().toStdString() << std::endl;
+        std::cout << "Tamper Protection: " << (report.value("tamperProtectionEnabled").toBool() ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "File Exists: " << (report.value("fileExists").toBool() ? "Yes" : "No") << std::endl;
+        std::cout << "Valid: " << (report.value("isValid").toBool() ? "Yes" : "No") << std::endl;
+        std::cout << "Total Entries: " << report.value("totalEntries").toInt() << std::endl;
+        std::cout << "Valid Entries: " << report.value("validEntries").toInt() << std::endl;
+        std::cout << "Invalid Entries: " << report.value("invalidEntries").toInt() << std::endl;
+        std::cout << "First Entry Hash: " << report.value("firstEntryHash").toString().toStdString() << std::endl;
+        std::cout << "Last Entry Hash: " << report.value("lastEntryHash").toString().toStdString() << std::endl;
+        
+        QStringList errors = report.value("errors").toStringList();
+        if (!errors.isEmpty()) {
+            std::cout << std::endl << "Errors:" << std::endl;
+            for (const QString& error : errors) {
+                std::cout << "  - " << error.toStdString() << std::endl;
+            }
+        }
+        
+        std::cout << "Verification Time: " << report.value("verificationTime").toString().toStdString() << std::endl;
+        
+        return report.value("isValid").toBool() ? 0 : 1;
+    } else if (subCommand == "config") {
+        if (args.size() < 2) {
+            std::cerr << "Usage: eagle-cli audit config <enable|disable>" << std::endl;
+            return 1;
+        }
+        
+        QString action = args[1].toLower();
+        bool enabled = (action == "enable" || action == "1" || action == "true");
+        
+        auditLog->setTamperProtectionEnabled(enabled);
+        
+        std::cout << "Tamper protection " << (enabled ? "enabled" : "disabled") << std::endl;
+        return 0;
+    } else {
+        std::cerr << "Unknown command: " << subCommand.toStdString() << std::endl;
+        return 1;
+    }
+}
+
 int main(int argc, char *argv[])
 {
     EagleCLI cli;
