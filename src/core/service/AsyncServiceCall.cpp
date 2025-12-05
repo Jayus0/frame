@@ -280,7 +280,7 @@ ServiceCallResult AsyncServiceCall::executeCall(const QString& serviceName,
     timer.start();
     
     if (!serviceRegistry) {
-        return ServiceCallResult("ServiceRegistry not available");
+        return ServiceCallResult(QString("ServiceRegistry not available"));
     }
     
     try {
@@ -297,7 +297,7 @@ ServiceCallResult AsyncServiceCall::executeCall(const QString& serviceName,
         return errorResult;
     } catch (...) {
         int elapsed = static_cast<int>(timer.elapsed());
-        ServiceCallResult errorResult("Unknown exception occurred");
+        ServiceCallResult errorResult(QString("Unknown exception occurred"));
         errorResult.elapsedMs = elapsed;
         return errorResult;
     }
