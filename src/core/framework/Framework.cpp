@@ -69,6 +69,10 @@ bool Framework::initialize(const QString& configPath)
         d->rbacManager->setEventBus(d->eventBus);
     }
     d->auditLogManager = new AuditLogManager(this);
+    // 启用日志防篡改（默认已启用，这里确保AlertSystem可用时设置）
+    if (d->auditLogManager) {
+        d->auditLogManager->setTamperProtectionEnabled(true);
+    }
     d->performanceMonitor = new PerformanceMonitor(this);
     d->alertSystem = new AlertSystem(d->performanceMonitor, this);
     d->rateLimiter = new RateLimiter(this);

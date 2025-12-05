@@ -347,6 +347,108 @@ void registerApiRoutes(ApiServer* server) {
     // 系统管理API
     // ============================================================================
     
+    // ============================================================================
+    // 日志防篡改API
+    // ============================================================================
+    
+    // GET /api/v1/audit/integrity - 验证日志完整性
+    server->get("/api/v1/audit/integrity", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "audit.read")) {
+            resp.setError(403, "Forbidden", "缺少权限: audit.read");
+            return;
+        }
+        
+        if (!framework || !framework->auditLogManager()) {
+            resp.setError(500, "Framework or AuditLogManager not available");
+            return;
+        }
+        
+        AuditLogManager* auditLog = framework->auditLogManager();
+        QString logFilePath = req.queryParams.value("file", QString());
+        
+        bool isValid = auditLog->verifyLogIntegrity(logFilePath);
+        
+        QJsonObject result;
+        result["isValid"] = isValid;
+        result["tamperProtectionEnabled"] = auditLog->isTamperProtectionEnabled();
+        result["lastEntryHash"] = auditLog->getLastEntryHash();
+        
+        if (!isValid) {
+            // 如果验证失败，触发告警
+            AlertSystem* alertSystem = framework->alertSystem();
+            if (alertSystem) {
+                alertSystem->triggerAlert("audit_log_tamper_detected", 
+                                         "审计日志完整性验证失败，可能被篡改",
+                                         AlertLevel::Critical);
+            }
+        }
+        
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/audit/integrity/report - 获取完整性报告
+    server->get("/api/v1/audit/integrity/report", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "audit.read")) {
+            resp.setError(403, "Forbidden", "缺少权限: audit.read");
+            return;
+        }
+        
+        if (!framework || !framework->auditLogManager()) {
+            resp.setError(500, "Framework or AuditLogManager not available");
+            return;
+        }
+        
+        AuditLogManager* auditLog = framework->auditLogManager();
+        QString logFilePath = req.queryParams.value("file", QString());
+        
+        QVariantMap report = auditLog->getIntegrityReport(logFilePath);
+        
+        QJsonObject result;
+        for (auto it = report.begin(); it != report.end(); ++it) {
+            result[it.key()] = QJsonValue::fromVariant(it.value());
+        }
+        
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/audit/integrity/config - 配置防篡改
+    server->post("/api/v1/audit/integrity/config", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "audit.write")) {
+            resp.setError(403, "Forbidden", "缺少权限: audit.write");
+            return;
+        }
+        
+        if (!framework || !framework->auditLogManager()) {
+            resp.setError(500, "Framework or AuditLogManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        bool enabled = body.value("enabled").toBool(true);
+        
+        AuditLogManager* auditLog = framework->auditLogManager();
+        auditLog->setTamperProtectionEnabled(enabled);
+        
+        QJsonObject result;
+        result["success"] = true;
+        result["tamperProtectionEnabled"] = enabled;
+        result["message"] = QString("日志防篡改已%1").arg(enabled ? "启用" : "禁用");
+        
+        resp.setSuccess(result);
+    });
+    
     // GET /api/v1/health - 健康检查（详细报告）
     server->get("/api/v1/health", [framework](const HttpRequest& req, HttpResponse& resp) {
         Q_UNUSED(req);

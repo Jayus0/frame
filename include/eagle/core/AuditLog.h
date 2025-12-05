@@ -6,6 +6,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QVariantMap>
 #include <QtCore/QMutex>
+#include <QtCore/QByteArray>
 
 namespace Eagle {
 namespace Core {
@@ -44,6 +45,8 @@ struct AuditLogEntry {
     bool success;                // 是否成功
     QString errorMessage;        // 错误信息（如果失败）
     QVariantMap metadata;        // 额外元数据
+    QString previousHash;        // 前一条日志的哈希值（链式哈希，防篡改）
+    QString entryHash;           // 当前条目的哈希值
     
     AuditLogEntry() 
         : level(AuditLevel::Info)
@@ -55,6 +58,11 @@ struct AuditLogEntry {
     bool isValid() const {
         return !userId.isEmpty() && !action.isEmpty();
     }
+    
+    /**
+     * @brief 计算日志条目的哈希值
+     */
+    QString calculateHash() const;
 };
 
 /**
@@ -101,6 +109,13 @@ public:
     int getEntryCount() const;
     int getEntryCount(const QString& userId) const;
     int getFailureCount(const QString& userId) const;
+    
+    // 日志防篡改功能
+    void setTamperProtectionEnabled(bool enabled);
+    bool isTamperProtectionEnabled() const;
+    bool verifyLogIntegrity(const QString& logFilePath = QString()) const;
+    QVariantMap getIntegrityReport(const QString& logFilePath = QString()) const;
+    QString getLastEntryHash() const;
     
 signals:
     void logEntryAdded(const AuditLogEntry& entry);

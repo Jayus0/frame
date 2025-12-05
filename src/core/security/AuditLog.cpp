@@ -1,6 +1,7 @@
 #include "eagle/core/AuditLog.h"
 #include "AuditLog_p.h"
 #include "eagle/core/Logger.h"
+#include "eagle/core/AlertSystem.h"
 #include <QtCore/QFile>
 #include <QtCore/QTextStream>
 #include <QtCore/QJsonDocument>
@@ -10,6 +11,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QDateTime>
+#include <QtCore/QCryptographicHash>
 #include <algorithm>
 
 namespace Eagle {
@@ -24,6 +26,8 @@ void AuditLogManager::Private::writeToFile(const AuditLogEntry& entry)
     // 检查是否需要轮转
     if (rotationEnabled && shouldRotate()) {
         performRotation();
+        // 轮转后重置哈希链
+        lastEntryHash = QString();
     }
     
     QFile file(logFilePath);
@@ -35,18 +39,36 @@ void AuditLogManager::Private::writeToFile(const AuditLogEntry& entry)
     QTextStream stream(&file);
     stream.setCodec("UTF-8");
     
+    // 创建可修改的条目副本，用于添加哈希
+    AuditLogEntry entryWithHash = entry;
+    
+    // 如果启用防篡改，添加前一条日志的哈希值
+    if (tamperProtectionEnabled) {
+        entryWithHash.previousHash = lastEntryHash;
+        // 计算当前条目的哈希值
+        entryWithHash.entryHash = entryWithHash.calculateHash();
+        // 更新最后一条日志的哈希值
+        lastEntryHash = entryWithHash.entryHash;
+    }
+    
     QJsonObject entryObj;
-    entryObj["timestamp"] = entry.timestamp.toString(Qt::ISODate);
-    entryObj["user_id"] = entry.userId;
-    entryObj["action"] = entry.action;
-    entryObj["resource"] = entry.resource;
-    entryObj["level"] = static_cast<int>(entry.level);
-    entryObj["description"] = entry.description;
-    entryObj["success"] = entry.success;
-    entryObj["error_message"] = entry.errorMessage;
+    entryObj["timestamp"] = entryWithHash.timestamp.toString(Qt::ISODate);
+    entryObj["user_id"] = entryWithHash.userId;
+    entryObj["action"] = entryWithHash.action;
+    entryObj["resource"] = entryWithHash.resource;
+    entryObj["level"] = static_cast<int>(entryWithHash.level);
+    entryObj["description"] = entryWithHash.description;
+    entryObj["success"] = entryWithHash.success;
+    entryObj["error_message"] = entryWithHash.errorMessage;
+    
+    // 添加防篡改字段
+    if (tamperProtectionEnabled) {
+        entryObj["previous_hash"] = entryWithHash.previousHash;
+        entryObj["entry_hash"] = entryWithHash.entryHash;
+    }
     
     QJsonObject metaObj;
-    for (auto it = entry.metadata.begin(); it != entry.metadata.end(); ++it) {
+    for (auto it = entryWithHash.metadata.begin(); it != entryWithHash.metadata.end(); ++it) {
         metaObj[it.key()] = QJsonValue::fromVariant(it.value());
     }
     entryObj["metadata"] = metaObj;
@@ -234,6 +256,8 @@ AuditLogManager::AuditLogManager(QObject* parent)
     d->logFilePath = d->generateLogFileName(QDateTime::currentDateTime());
     d->logFilePath = logDir + "/" + d->logFilePath;
     d->lastRotationDate = d->getCurrentRotationDate();
+    d->tamperProtectionEnabled = true;  // 默认启用防篡改
+    d->lastEntryHash = QString();  // 初始哈希为空
     
     Logger::info("AuditLog", QString("审计日志管理器初始化，日志文件: %1").arg(d->logFilePath));
 }
@@ -254,8 +278,16 @@ void AuditLogManager::log(const AuditLogEntry& entry)
     auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     
+    // 创建带哈希的条目副本
+    AuditLogEntry entryWithHash = entry;
+    if (d->tamperProtectionEnabled) {
+        entryWithHash.previousHash = d->lastEntryHash;
+        entryWithHash.entryHash = entryWithHash.calculateHash();
+        d->lastEntryHash = entryWithHash.entryHash;
+    }
+    
     // 添加到内存列表
-    d->entries.append(entry);
+    d->entries.append(entryWithHash);
     
     // 如果超过最大条目数，移除最旧的
     while (d->entries.size() > d->maxEntries) {
@@ -263,14 +295,16 @@ void AuditLogManager::log(const AuditLogEntry& entry)
     }
     
     // 写入文件
-    d->writeToFile(entry);
+    locker.unlock();
+    d->writeToFile(entryWithHash);
+    locker.relock();
     
     // 如果启用自动刷新，立即刷新
     if (d->autoFlush) {
         // 文件已经关闭，不需要额外刷新
     }
     
-    emit logEntryAdded(entry);
+    emit logEntryAdded(entryWithHash);
     
     // 记录到系统日志
     QString logMsg = QString("[%1] %2: %3 - %4")

@@ -151,6 +151,8 @@ public:
             return handleSsl(args.mid(1));
         } else if (parser.isSet(healthOption) || command == "health") {
             return handleHealth(args.mid(1));
+        } else if (command == "audit") {
+            return handleAudit(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
