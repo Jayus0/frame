@@ -3,6 +3,7 @@
 #include "eagle/core/ConfigEncryption.h"
 #include "eagle/core/ConfigSchema.h"
 #include "eagle/core/ConfigVersion.h"
+#include "eagle/core/ConfigFormat.h"
 #include "eagle/core/Logger.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -34,38 +35,49 @@ ConfigManager::~ConfigManager()
     delete d_ptr;
 }
 
-bool ConfigManager::loadFromFile(const QString& filePath, ConfigLevel level)
+bool ConfigManager::loadFromFile(const QString& filePath, ConfigLevel level, ConfigFormat format)
 {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        Logger::error("ConfigManager", QString("无法打开配置文件: %1").arg(filePath));
-        return false;
+    // 如果格式为JSON但未指定，自动检测
+    if (format == ConfigFormat::JSON) {
+        format = ConfigFormatParser::formatFromExtension(filePath);
     }
     
-    QByteArray data = file.readAll();
-    file.close();
-    
-    return loadFromJson(data, level);
-}
-
-bool ConfigManager::loadFromJson(const QByteArray& json, ConfigLevel level)
-{
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(json, &error);
-    if (error.error != QJsonParseError::NoError) {
-        Logger::error("ConfigManager", QString("JSON解析错误: %1").arg(error.errorString()));
-        return false;
-    }
-    
-    if (!doc.isObject()) {
-        Logger::error("ConfigManager", "JSON文档不是对象");
+    QVariantMap config = ConfigFormatParser::loadFromFile(filePath, format);
+    if (config.isEmpty()) {
+        Logger::error("ConfigManager", QString("无法加载配置文件: %1").arg(filePath));
         return false;
     }
     
     auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     
-    QVariantMap config = doc.object().toVariantMap();
+    switch (level) {
+    case Global:
+        d->globalConfig = config;
+        break;
+    case User:
+        d->userConfig = config;
+        break;
+    default:
+        Logger::warning("ConfigManager", "不支持的配置级别");
+        return false;
+    }
+    
+    Logger::info("ConfigManager", QString("配置加载成功，级别: %1, 格式: %2")
+        .arg(level).arg(static_cast<int>(format)));
+    emit configReloaded();
+    return true;
+}
+
+bool ConfigManager::loadFromJson(const QByteArray& json, ConfigLevel level)
+{
+    QVariantMap config = ConfigFormatParser::parseContent(json, ConfigFormat::JSON);
+    if (config.isEmpty()) {
+        return false;
+    }
+    
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
     
     switch (level) {
     case Global:
@@ -80,6 +92,60 @@ bool ConfigManager::loadFromJson(const QByteArray& json, ConfigLevel level)
     }
     
     Logger::info("ConfigManager", QString("配置加载成功，级别: %1").arg(level));
+    emit configReloaded();
+    return true;
+}
+
+bool ConfigManager::loadFromYaml(const QByteArray& yaml, ConfigLevel level)
+{
+    QVariantMap config = ConfigFormatParser::parseContent(yaml, ConfigFormat::YAML);
+    if (config.isEmpty()) {
+        return false;
+    }
+    
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    switch (level) {
+    case Global:
+        d->globalConfig = config;
+        break;
+    case User:
+        d->userConfig = config;
+        break;
+    default:
+        Logger::warning("ConfigManager", "不支持的配置级别");
+        return false;
+    }
+    
+    Logger::info("ConfigManager", QString("YAML配置加载成功，级别: %1").arg(level));
+    emit configReloaded();
+    return true;
+}
+
+bool ConfigManager::loadFromIni(const QByteArray& ini, ConfigLevel level)
+{
+    QVariantMap config = ConfigFormatParser::parseContent(ini, ConfigFormat::INI);
+    if (config.isEmpty()) {
+        return false;
+    }
+    
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    switch (level) {
+    case Global:
+        d->globalConfig = config;
+        break;
+    case User:
+        d->userConfig = config;
+        break;
+    default:
+        Logger::warning("ConfigManager", "不支持的配置级别");
+        return false;
+    }
+    
+    Logger::info("ConfigManager", QString("INI配置加载成功，级别: %1").arg(level));
     emit configReloaded();
     return true;
 }
@@ -225,7 +291,7 @@ bool ConfigManager::updateConfig(const QVariantMap& config, ConfigLevel level)
     return false;
 }
 
-bool ConfigManager::saveToFile(const QString& filePath, ConfigLevel level)
+bool ConfigManager::saveToFile(const QString& filePath, ConfigLevel level, ConfigFormat format)
 {
     auto* d = d_func();
     QMutexLocker locker(&d->mutex);
@@ -249,35 +315,31 @@ bool ConfigManager::saveToFile(const QString& filePath, ConfigLevel level)
     QVariantMap configToSave = *sourceConfig;
     
     // 如果启用加密，加密敏感字段
-    {
-        auto* d = d_func();
-        QMutexLocker locker(&d->mutex);
-        if (d->encryptionEnabled && !d->sensitiveKeys.isEmpty()) {
-            configToSave = ConfigEncryption::encryptConfig(configToSave, d->sensitiveKeys, d->encryptionKey);
-        }
+    if (d->encryptionEnabled && !d->sensitiveKeys.isEmpty()) {
+        configToSave = ConfigEncryption::encryptConfig(configToSave, d->sensitiveKeys, d->encryptionKey);
     }
     
-    QJsonObject jsonObj = QJsonObject::fromVariantMap(configToSave);
-    QJsonDocument doc(jsonObj);
-    
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly)) {
-        Logger::error("ConfigManager", QString("无法写入配置文件: %1").arg(filePath));
-        return false;
+    // 如果格式为JSON但未指定，根据文件扩展名自动选择
+    if (format == ConfigFormat::JSON) {
+        format = ConfigFormatParser::formatFromExtension(filePath);
     }
     
-    file.write(doc.toJson());
-    file.close();
+    locker.unlock();
+    
+    // 保存到文件
+    bool success = ConfigFormatParser::saveToFile(configToSave, filePath, format);
     
     // 创建新版本（如果版本管理启用）
-    if (d->versionManager && d->versionManager->isEnabled()) {
-        locker.unlock();
+    if (success && d->versionManager && d->versionManager->isEnabled()) {
         d->versionManager->createVersion(configToSave, "system", QString("保存到文件: %1").arg(filePath));
-        locker.relock();
     }
     
-    Logger::info("ConfigManager", QString("配置保存成功: %1").arg(filePath));
-    return true;
+    if (success) {
+        Logger::info("ConfigManager", QString("配置保存成功: %1 (格式: %2)").arg(filePath)
+            .arg(static_cast<int>(format)));
+    }
+    
+    return success;
 }
 
 bool ConfigManager::validateConfig(const QVariantMap& config, const QString& schemaPath) const

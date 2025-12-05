@@ -7,6 +7,7 @@
 #include <QtCore/QStringList>
 #include <QtCore/QMutex>
 #include "ConfigVersion.h"
+#include "ConfigFormat.h"
 
 namespace Eagle {
 namespace Core {
@@ -32,8 +33,10 @@ public:
     ~ConfigManager();
     
     // 配置加载
-    bool loadFromFile(const QString& filePath, ConfigLevel level = Global);
+    bool loadFromFile(const QString& filePath, ConfigLevel level = Global, ConfigFormat format = ConfigFormat::JSON);
     bool loadFromJson(const QByteArray& json, ConfigLevel level = Global);
+    bool loadFromYaml(const QByteArray& yaml, ConfigLevel level = Global);
+    bool loadFromIni(const QByteArray& ini, ConfigLevel level = Global);
     void loadFromEnvironment();
     
     // 配置访问
@@ -44,7 +47,7 @@ public:
     
     // 配置更新
     bool updateConfig(const QVariantMap& config, ConfigLevel level = Global);
-    bool saveToFile(const QString& filePath, ConfigLevel level = Global);
+    bool saveToFile(const QString& filePath, ConfigLevel level = Global, ConfigFormat format = ConfigFormat::JSON);
     
     // 配置验证
     bool validateConfig(const QVariantMap& config, const QString& schemaPath) const;
