@@ -30,6 +30,7 @@ CONFIG_SOURCES += \
     ../src/core/config/ConfigSchema.cpp \
     ../src/core/config/ConfigVersion.cpp \
     ../src/core/config/ConfigFormat.cpp \
+    ../src/core/api/SslConfig.cpp \
     ../src/core/config/BackupManager.cpp
 
 # 安全模块
@@ -135,6 +136,8 @@ HEADERS += \
     ../include/eagle/core/ConfigVersion.h \
     ../src/core/config/ConfigVersion_p.h \
     ../include/eagle/core/ConfigFormat.h \
+    ../include/eagle/core/SslConfig.h \
+    ../src/core/api/SslConfig_p.h \
     ../include/eagle/core/NotificationChannel.h \
     ../include/eagle/core/EmailChannel.h \
     ../include/eagle/core/WebhookChannel.h \

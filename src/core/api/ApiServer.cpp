@@ -8,6 +8,9 @@
 #include <QtCore/QJsonParseError>
 #include <QtCore/QDateTime>
 #include <QtNetwork/QHostAddress>
+#include <QtNetwork/QSslServer>
+#include <QtNetwork/QSslSocket>
+#include <QtNetwork/QSslError>
 
 namespace Eagle {
 namespace Core {
@@ -206,6 +209,7 @@ ApiServer::ApiServer(QObject* parent)
     : QObject(parent)
     , d(new ApiServerPrivate(this))
 {
+    d->sslManager = new SslManager(this);
 }
 
 ApiServer::~ApiServer() {
@@ -218,6 +222,8 @@ bool ApiServer::start(quint16 port) {
         Logger::warning("ApiServer", QString("服务器已在运行，端口: %1").arg(d->serverPort));
         return true;
     }
+    
+    d->isHttpsEnabled = false;
     
     if (!d->tcpServer) {
         d->tcpServer = new QTcpServer(this);
@@ -241,12 +247,68 @@ bool ApiServer::start(quint16 port) {
     return true;
 }
 
+bool ApiServer::startHttps(quint16 port, const SslConfig& sslConfig)
+{
+    auto* d = d_func();
+    
+    if (d->isServerRunning) {
+        Logger::warning("ApiServer", QString("服务器已在运行，端口: %1").arg(d->serverPort));
+        return false;
+    }
+    
+    if (!sslConfig.enabled) {
+        Logger::error("ApiServer", "SSL配置未启用");
+        return false;
+    }
+    
+    // 加载SSL配置
+    if (!d->sslManager->loadConfig(sslConfig)) {
+        Logger::error("ApiServer", "无法加载SSL配置");
+        return false;
+    }
+    
+    d->serverPort = port;
+    d->isHttpsEnabled = true;
+    
+    // 创建SSL服务器
+    if (!d->sslServer) {
+        d->sslServer = new QSslServer(this);
+        connect(d->sslServer, &QSslServer::newConnection, this, &ApiServer::onNewConnection);
+        connect(d->sslServer, &QSslServer::sslErrors, this, [this](const QList<QSslError>& errors) {
+            QStringList errorMessages;
+            for (const QSslError& error : errors) {
+                errorMessages.append(error.errorString());
+            }
+            Logger::warning("ApiServer", QString("SSL错误: %1").arg(errorMessages.join(", ")));
+        });
+    }
+    
+    // 配置SSL服务器
+    QSslConfiguration sslConfig_qt = d->sslManager->getSslConfiguration();
+    d->sslServer->setSslConfiguration(sslConfig_qt);
+    
+    if (!d->sslServer->listen(QHostAddress::Any, port)) {
+        QString error = QString("无法启动HTTPS服务器，端口: %1, 错误: %2")
+                       .arg(port).arg(d->sslServer->errorString());
+        Logger::error("ApiServer", error);
+        emit this->error(error);
+        return false;
+    }
+    
+    d->isServerRunning = true;
+    Logger::info("ApiServer", QString("HTTPS服务器已启动，端口: %1").arg(port));
+    emit serverStarted(port);
+    return true;
+}
+
 void ApiServer::stop() {
     if (!d->isServerRunning) {
         return;
     }
     
-    if (d->tcpServer) {
+    if (d->isHttpsEnabled && d->sslServer) {
+        d->sslServer->close();
+    } else if (d->tcpServer) {
         d->tcpServer->close();
     }
     
@@ -258,8 +320,9 @@ void ApiServer::stop() {
     d->clientBuffers.clear();
     
     d->isServerRunning = false;
+    d->isHttpsEnabled = false;
     
-    Logger::info("ApiServer", "HTTP服务器已停止");
+    Logger::info("ApiServer", d->isHttpsEnabled ? "HTTPS服务器已停止" : "HTTP服务器已停止");
     emit serverStopped();
 }
 
@@ -269,6 +332,35 @@ bool ApiServer::isRunning() const {
 
 quint16 ApiServer::port() const {
     return d->serverPort;
+}
+
+void ApiServer::setSslConfig(const SslConfig& config)
+{
+    auto* d = d_func();
+    if (d->sslManager) {
+        d->sslManager->loadConfig(config);
+    }
+}
+
+SslConfig ApiServer::sslConfig() const
+{
+    const auto* d = d_func();
+    if (d->sslManager) {
+        return d->sslManager->getConfig();
+    }
+    return SslConfig();
+}
+
+SslManager* ApiServer::sslManager() const
+{
+    const auto* d = d_func();
+    return d->sslManager;
+}
+
+bool ApiServer::isHttpsEnabled() const
+{
+    const auto* d = d_func();
+    return d->isHttpsEnabled;
 }
 
 void ApiServer::get(const QString& path, RequestHandler handler) {
@@ -321,18 +413,52 @@ Framework* ApiServer::framework() const {
 }
 
 void ApiServer::onNewConnection() {
-    while (d->tcpServer->hasPendingConnections()) {
-        QTcpSocket* client = d->tcpServer->nextPendingConnection();
-        connect(client, &QTcpSocket::readyRead, this, &ApiServer::onClientReadyRead);
-        connect(client, &QTcpSocket::disconnected, this, &ApiServer::onClientDisconnected);
-        
-        QMutexLocker locker(&d->clientsMutex);
-        d->clientBuffers[client] = QByteArray();
+    QAbstractSocket* client = nullptr;
+    
+    if (d->isHttpsEnabled && d->sslServer) {
+        while (d->sslServer->hasPendingConnections()) {
+            client = d->sslServer->nextPendingConnection();
+            QSslSocket* sslSocket = qobject_cast<QSslSocket*>(client);
+            if (sslSocket) {
+                // 启动SSL握手
+                sslSocket->startServerEncryption();
+                connect(sslSocket, &QSslSocket::encrypted, this, [this, sslSocket]() {
+                    Logger::debug("ApiServer", "SSL连接已加密");
+                });
+                connect(sslSocket, QOverload<const QList<QSslError>&>::of(&QSslSocket::sslErrors),
+                        this, [this, sslSocket](const QList<QSslError>& errors) {
+                    QStringList errorMessages;
+                    for (const QSslError& error : errors) {
+                        errorMessages.append(error.errorString());
+                    }
+                    Logger::warning("ApiServer", QString("SSL错误: %1").arg(errorMessages.join(", ")));
+                    // 根据配置决定是否接受错误
+                    if (!d_func()->sslManager->getConfig().verifyPeer) {
+                        sslSocket->ignoreSslErrors();
+                    }
+                });
+            }
+            
+            connect(client, &QAbstractSocket::readyRead, this, &ApiServer::onClientReadyRead);
+            connect(client, &QAbstractSocket::disconnected, this, &ApiServer::onClientDisconnected);
+            
+            QMutexLocker locker(&d->clientsMutex);
+            d->clientBuffers[client] = QByteArray();
+        }
+    } else if (d->tcpServer) {
+        while (d->tcpServer->hasPendingConnections()) {
+            client = d->tcpServer->nextPendingConnection();
+            connect(client, &QAbstractSocket::readyRead, this, &ApiServer::onClientReadyRead);
+            connect(client, &QAbstractSocket::disconnected, this, &ApiServer::onClientDisconnected);
+            
+            QMutexLocker locker(&d->clientsMutex);
+            d->clientBuffers[client] = QByteArray();
+        }
     }
 }
 
 void ApiServer::onClientReadyRead() {
-    QTcpSocket* client = qobject_cast<QTcpSocket*>(sender());
+    QAbstractSocket* client = qobject_cast<QAbstractSocket*>(sender());
     if (!client) {
         return;
     }
@@ -384,7 +510,7 @@ void ApiServer::onClientReadyRead() {
 }
 
 void ApiServer::onClientDisconnected() {
-    QTcpSocket* client = qobject_cast<QTcpSocket*>(sender());
+    QAbstractSocket* client = qobject_cast<QAbstractSocket*>(sender());
     if (!client) {
         return;
     }
@@ -420,7 +546,7 @@ bool ApiServer::matchRoute(const QString& routePattern, const QString& path, QMa
     return true;
 }
 
-void ApiServer::handleRequest(QTcpSocket* socket, const HttpRequest& request) {
+void ApiServer::handleRequest(QAbstractSocket* socket, const HttpRequest& request) {
     emit requestReceived(request.method, request.path);
     
     HttpResponse response;
@@ -479,7 +605,7 @@ void ApiServer::handleRequest(QTcpSocket* socket, const HttpRequest& request) {
     emit requestCompleted(request.method, request.path, response.statusCode);
 }
 
-void ApiServer::sendResponse(QTcpSocket* socket, const HttpResponse& response) {
+void ApiServer::sendResponse(QAbstractSocket* socket, const HttpResponse& response) {
     QByteArray httpResponse = response.toHttpResponse();
     socket->write(httpResponse);
     socket->flush();

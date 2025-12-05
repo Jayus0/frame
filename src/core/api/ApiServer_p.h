@@ -4,6 +4,8 @@
 #include "eagle/core/ApiServer.h"
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
+#include <QtNetwork/QSslServer>
+#include <QtNetwork/QSslSocket>
 #include <QtCore/QMutex>
 #include <QtCore/QMap>
 #include <QtCore/QList>
@@ -27,9 +29,12 @@ public:
     ApiServerPrivate(ApiServer* qq)
         : q(qq)
         , tcpServer(nullptr)
+        , sslServer(nullptr)
         , serverPort(8080)
         , isServerRunning(false)
+        , isHttpsEnabled(false)
         , framework(nullptr)
+        , sslManager(nullptr)
     {
     }
     
@@ -38,13 +43,23 @@ public:
             tcpServer->close();
             delete tcpServer;
         }
+        if (sslServer) {
+            sslServer->close();
+            delete sslServer;
+        }
+        if (sslManager) {
+            delete sslManager;
+        }
     }
     
     ApiServer* q;
     QTcpServer* tcpServer;
+    QSslServer* sslServer;  // HTTPS服务器
     quint16 serverPort;
     bool isServerRunning;
+    bool isHttpsEnabled;
     Framework* framework;
+    SslManager* sslManager;
     
     // 路由表
     QList<Route> routes;
@@ -55,7 +70,7 @@ public:
     QMutex middlewaresMutex;
     
     // 客户端连接管理
-    QMap<QTcpSocket*, QByteArray> clientBuffers;
+    QMap<QAbstractSocket*, QByteArray> clientBuffers;
     QMutex clientsMutex;
 };
 

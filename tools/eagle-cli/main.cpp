@@ -27,6 +27,7 @@
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
 #include "eagle/core/AsyncServiceCall.h"
+#include "eagle/core/SslConfig.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -96,6 +97,9 @@ public:
         QCommandLineOption asyncOption("async", "Async service call");
         parser.addOption(asyncOption);
         
+        QCommandLineOption sslOption("ssl", "SSL/TLS management");
+        parser.addOption(sslOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -139,6 +143,8 @@ public:
             return handleConfigVersion(args.mid(1));
         } else if (parser.isSet(asyncOption) || command == "async") {
             return handleAsync(args.mid(1));
+        } else if (parser.isSet(sslOption) || command == "ssl" || command == "tls") {
+            return handleSsl(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;

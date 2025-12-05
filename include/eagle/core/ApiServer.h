@@ -8,10 +8,12 @@
 #include <QtCore/QMutex>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
+#include <QtNetwork/QAbstractSocket>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
 #include <functional>
+#include "SslConfig.h"
 
 namespace Eagle {
 namespace Core {
@@ -102,9 +104,16 @@ public:
     
     // 服务器控制
     bool start(quint16 port = 8080);
+    bool startHttps(quint16 port = 8443, const SslConfig& sslConfig = SslConfig());
     void stop();
     bool isRunning() const;
     quint16 port() const;
+    
+    // SSL/TLS配置
+    void setSslConfig(const SslConfig& config);
+    SslConfig sslConfig() const;
+    SslManager* sslManager() const;
+    bool isHttpsEnabled() const;
     
     // 路由注册
     void get(const QString& path, RequestHandler handler);
@@ -144,10 +153,10 @@ private:
     bool matchRoute(const QString& routePattern, const QString& path, QMap<QString, QString>& params) const;
     
     // 处理请求
-    void handleRequest(QTcpSocket* socket, const HttpRequest& request);
+    void handleRequest(QAbstractSocket* socket, const HttpRequest& request);
     
     // 发送响应
-    void sendResponse(QTcpSocket* socket, const HttpResponse& response);
+    void sendResponse(QAbstractSocket* socket, const HttpResponse& response);
 };
 
 } // namespace Core

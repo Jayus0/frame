@@ -23,6 +23,7 @@
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
 #include "eagle/core/AsyncServiceCall.h"
+#include "eagle/core/SslConfig.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>

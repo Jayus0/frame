@@ -24,6 +24,7 @@ set(CONFIG_SOURCES
     config/ConfigSchema.cpp
     config/ConfigVersion.cpp
     config/ConfigFormat.cpp
+    api/SslConfig.cpp
     config/BackupManager.cpp
 )
 
@@ -50,6 +51,7 @@ set(MONITORING_SOURCES
 set(API_SOURCES
     api/ApiServer.cpp
     api/ApiRoutes.cpp
+    api/SslConfig.cpp
 )
 
 # 事件模块
