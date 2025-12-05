@@ -27,6 +27,10 @@ public:
     int maxFiles = 30;                            // 默认保留30个文件
     QDateTime lastRotationDate;                   // 上次轮转日期
     
+    // 日志防篡改
+    bool tamperProtectionEnabled = true;          // 是否启用防篡改
+    QString lastEntryHash;                        // 最后一条日志的哈希值（用于链式哈希）
+    
     void writeToFile(const AuditLogEntry& entry);
     bool shouldRotate() const;
     void performRotation();
