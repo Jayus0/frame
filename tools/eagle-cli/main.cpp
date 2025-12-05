@@ -106,6 +106,10 @@ public:
         if (parser.isSet(createOption) || command == "create") {
             return handleCreate(args.mid(1));
         } else if (parser.isSet(configOption) || command == "config") {
+            // 检查是否是config format子命令
+            if (args.size() > 1 && args[1] == "format") {
+                return handleConfigFormat(args.mid(2));
+            }
             return handleConfig(args.mid(1));
         } else if (parser.isSet(debugOption) || command == "debug") {
             return handleDebug(args.mid(1));
@@ -135,8 +139,6 @@ public:
             return handleConfigVersion(args.mid(1));
         } else if (parser.isSet(asyncOption) || command == "async") {
             return handleAsync(args.mid(1));
-        } else if (command == "config" && args.size() > 0 && args[0] == "format") {
-            return handleConfigFormat(args.mid(2));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
