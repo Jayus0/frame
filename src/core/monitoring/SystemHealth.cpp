@@ -122,7 +122,7 @@ ServiceHealthInfo SystemHealthManager::checkServiceHealth(const QString& service
     
     // 获取服务描述符
     ServiceDescriptor descriptor = registry->getServiceDescriptor(serviceName);
-    if (descriptor.name.isEmpty()) {
+    if (descriptor.serviceName.isEmpty()) {
         info.status = ServiceHealthStatus::Unknown;
         info.errorMessage = "Service not found";
         return info;

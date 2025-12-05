@@ -913,7 +913,7 @@ bool ServiceRegistry::checkServiceHealth(const QString& serviceName) const
     // 检查熔断器状态（如果启用）
     if (d->enableCircuitBreaker) {
         CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
-        if (breaker && breaker->getState() == CircuitBreakerState::Open) {
+        if (breaker && breaker->state() == CircuitState::Open) {
             return false;  // 熔断器打开，服务不健康
         }
     }
@@ -921,13 +921,12 @@ bool ServiceRegistry::checkServiceHealth(const QString& serviceName) const
     // 检查负载均衡器中的实例健康状态（如果启用）
     if (d->loadBalancer && d->enableLoadBalance) {
         // 获取服务实例的健康状态
-        QStringList instances = d->loadBalancer->getInstances(serviceName);
+        QList<ServiceInstance> instances = d->loadBalancer->getInstances(serviceName);
         if (!instances.isEmpty()) {
             // 至少有一个健康实例
             bool hasHealthyInstance = false;
-            for (const QString& instanceId : instances) {
-                LoadBalancer::InstanceStats stats = d->loadBalancer->getInstanceStats(serviceName, instanceId);
-                if (stats.isHealthy) {
+            for (const ServiceInstance& instance : instances) {
+                if (instance.healthy) {
                     hasHealthyInstance = true;
                     break;
                 }
