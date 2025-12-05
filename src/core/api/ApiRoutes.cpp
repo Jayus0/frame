@@ -2358,7 +2358,7 @@ void registerApiRoutes(ApiServer* server) {
         QJsonObject body = req.jsonBody();
         QString author = body.value("author").toString(userId);
         QString description = body.value("description").toString();
-        int version = body.value("version").toInt(0);
+        Q_UNUSED(body.value("version"));  // 版本号暂未使用，保留用于未来扩展
         
         int newVersion = configManager->createConfigVersion(author, description);
         if (newVersion <= 0) {

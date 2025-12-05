@@ -7,6 +7,7 @@
 #include <QtNetwork/QSslCertificate>
 #include <QtNetwork/QSslKey>
 #include <QtNetwork/QSslCipher>
+#include <QtNetwork/QSslConfiguration>
 
 namespace Eagle {
 namespace Core {
@@ -296,8 +297,8 @@ void SslManager::updateSslConfiguration()
     if (!d->config.cipherSuites.isEmpty()) {
         QList<QSslCipher> ciphers;
         for (const QString& cipherName : d->config.cipherSuites) {
-            // 使用静态方法创建QSslCipher
-            QSslCipher cipher = QSslCipher::fromName(cipherName);
+            // Qt 5 兼容：直接使用构造函数
+            QSslCipher cipher(cipherName);
             if (!cipher.isNull()) {
                 ciphers.append(cipher);
             }
