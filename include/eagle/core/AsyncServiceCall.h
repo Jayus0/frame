@@ -195,9 +195,6 @@ signals:
     void callStarted(const QString& serviceName, const QString& method);
     void callFinished(const QString& serviceName, const QString& method, const ServiceCallResult& result);
     
-private slots:
-    void onCallFinished();
-    
 private:
     ServiceRegistry* serviceRegistry;
     QThreadPool* threadPool;
