@@ -64,6 +64,10 @@ bool Framework::initialize(const QString& configPath)
     
     // 创建企业级组件
     d->rbacManager = new RBACManager(this);
+    // 设置EventBus到RBACManager，启用权限变更通知
+    if (d->eventBus && d->rbacManager) {
+        d->rbacManager->setEventBus(d->eventBus);
+    }
     d->auditLogManager = new AuditLogManager(this);
     d->performanceMonitor = new PerformanceMonitor(this);
     d->alertSystem = new AlertSystem(d->performanceMonitor, this);

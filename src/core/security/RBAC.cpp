@@ -1,6 +1,8 @@
 #include "eagle/core/RBAC.h"
 #include "RBAC_p.h"
 #include "eagle/core/Logger.h"
+#include "eagle/core/PermissionChangeNotification.h"
+#include "eagle/core/EventBus.h"
 #include <QtCore/QMutexLocker>
 #include <QtCore/QVariantMap>
 #include <QtCore/QVariantList>
@@ -137,6 +139,7 @@ bool RBACManager::addPermission(const Permission& permission)
     }
     
     d->permissions[permission.name] = permission;
+    QString operatorId = d->currentOperatorId;
     Logger::info("RBACManager", QString("添加权限: %1").arg(permission.name));
     
     // 清除相关缓存（所有包含此权限的缓存）
@@ -144,6 +147,18 @@ bool RBACManager::addPermission(const Permission& permission)
     clearPermissionCache(permission.name);
     
     emit permissionAdded(permission.name);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::PermissionAdded,
+        permission.name,
+        "permission",
+        QString(),
+        QString(),
+        operatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -173,6 +188,18 @@ bool RBACManager::removePermission(const QString& permissionName)
     clearPermissionCache(permissionName);
     
     emit permissionRemoved(permissionName);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::PermissionRemoved,
+        permissionName,
+        "permission",
+        QString(),
+        QString(),
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -218,6 +245,18 @@ bool RBACManager::addRole(const Role& role)
     clearCache();
     
     emit roleAdded(role.name);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::RoleAdded,
+        role.name,
+        "role",
+        QString(),
+        QString(),
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -242,6 +281,18 @@ bool RBACManager::removeRole(const QString& roleName)
     clearCache();
     
     emit roleRemoved(roleName);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::RoleRemoved,
+        roleName,
+        "role",
+        QString(),
+        QString(),
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -266,6 +317,17 @@ bool RBACManager::assignPermissionToRole(const QString& roleName, const QString&
     locker.unlock();
     clearPermissionCache(permissionName);
     
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::RolePermissionGranted,
+        roleName,
+        "role",
+        permissionName,
+        "permission",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -283,6 +345,17 @@ bool RBACManager::revokePermissionFromRole(const QString& roleName, const QStrin
     // 清除相关缓存
     locker.unlock();
     clearPermissionCache(permissionName);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::RolePermissionRevoked,
+        roleName,
+        "role",
+        permissionName,
+        "permission",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
     
     return true;
 }
@@ -308,6 +381,17 @@ bool RBACManager::addRoleInheritance(const QString& childRole, const QString& pa
     // 清除所有缓存（角色继承变更可能影响所有用户）
     locker.unlock();
     clearCache();
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::RoleInheritanceAdded,
+        childRole,
+        "role",
+        parentRole,
+        "role",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
     
     return true;
 }
@@ -355,6 +439,18 @@ bool RBACManager::addUser(const User& user)
     clearUserCache(user.userId);
     
     emit userAdded(user.userId);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::UserAdded,
+        user.userId,
+        "user",
+        QString(),
+        QString(),
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -374,6 +470,18 @@ bool RBACManager::removeUser(const QString& userId)
     clearUserCache(userId);
     
     emit userRemoved(userId);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::UserRemoved,
+        userId,
+        "user",
+        QString(),
+        QString(),
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -398,6 +506,17 @@ bool RBACManager::assignRoleToUser(const QString& userId, const QString& roleNam
     locker.unlock();
     clearUserCache(userId);
     
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::UserRoleAssigned,
+        userId,
+        "user",
+        roleName,
+        "role",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -415,6 +534,17 @@ bool RBACManager::revokeRoleFromUser(const QString& userId, const QString& roleN
     // 清除该用户的缓存
     locker.unlock();
     clearUserCache(userId);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::UserRoleRevoked,
+        userId,
+        "user",
+        roleName,
+        "role",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
     
     return true;
 }
@@ -441,6 +571,18 @@ bool RBACManager::assignPermissionToUser(const QString& userId, const QString& p
     clearUserCache(userId);
     
     emit permissionGranted(userId, permissionName);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::UserPermissionGranted,
+        userId,
+        "user",
+        permissionName,
+        "permission",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -460,6 +602,18 @@ bool RBACManager::revokePermissionFromUser(const QString& userId, const QString&
     clearUserCache(userId);
     
     emit permissionRevoked(userId, permissionName);
+    
+    // 发送权限变更通知
+    PermissionChangeNotification notification = PermissionChangeNotifier::createNotification(
+        PermissionChangeType::UserPermissionRevoked,
+        userId,
+        "user",
+        permissionName,
+        "permission",
+        d->currentOperatorId
+    );
+    notifyPermissionChange(notification);
+    
     return true;
 }
 
@@ -819,6 +973,71 @@ void RBACManager::clearPermissionCache(const QString& permissionName) const
     
     if (!keysToRemove.isEmpty()) {
         Logger::debug("RBACManager", QString("清除权限 %1 的缓存，共%2条记录").arg(permissionName).arg(keysToRemove.size()));
+    }
+}
+
+// 权限变更通知配置
+void RBACManager::setNotificationEnabled(bool enabled)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->notificationEnabled = enabled;
+    Logger::info("RBACManager", QString("权限变更通知%1").arg(enabled ? "启用" : "禁用"));
+}
+
+bool RBACManager::isNotificationEnabled() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->notificationEnabled;
+}
+
+void RBACManager::setEventBus(EventBus* eventBus)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->eventBus = eventBus;
+    Logger::info("RBACManager", "EventBus已设置");
+}
+
+EventBus* RBACManager::eventBus() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->eventBus;
+}
+
+void RBACManager::setOperatorId(const QString& operatorId)
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    d->currentOperatorId = operatorId;
+}
+
+QString RBACManager::operatorId() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->currentOperatorId;
+}
+
+// 私有辅助函数：发送权限变更通知
+void RBACManager::notifyPermissionChange(const PermissionChangeNotification& notification) const
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    if (!d->notificationEnabled) {
+        return;
+    }
+    
+    // 发送信号
+    emit const_cast<RBACManager*>(this)->permissionChanged(notification);
+    
+    // 发布到EventBus
+    if (d->eventBus) {
+        locker.unlock();  // 释放锁，避免在EventBus中死锁
+        PermissionChangeNotifier::publishToEventBus(d->eventBus, notification);
     }
 }
 

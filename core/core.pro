@@ -39,7 +39,8 @@ SECURITY_SOURCES += \
     ../src/core/security/AuditLog.cpp \
     ../src/core/security/ApiKeyManager.cpp \
     ../src/core/security/SessionManager.cpp \
-    ../src/core/security/RateLimiter.cpp
+    ../src/core/security/RateLimiter.cpp \
+    ../src/core/security/PermissionChangeNotification.cpp
 
 # 监控模块
 MONITORING_SOURCES += \
@@ -140,6 +141,7 @@ HEADERS += \
     ../include/eagle/core/SslConfig.h \
     ../src/core/api/SslConfig_p.h \
     ../include/eagle/core/SystemHealth.h \
+    ../include/eagle/core/PermissionChangeNotification.h \
     ../include/eagle/core/NotificationChannel.h \
     ../include/eagle/core/EmailChannel.h \
     ../include/eagle/core/WebhookChannel.h \

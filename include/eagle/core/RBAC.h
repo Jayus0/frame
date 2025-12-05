@@ -7,6 +7,14 @@
 #include <QtCore/QMap>
 #include <QtCore/QSet>
 #include <QtCore/QMutex>
+#include "PermissionChangeNotification.h"
+
+// 前向声明
+namespace Eagle {
+namespace Core {
+class EventBus;
+}
+}
 
 namespace Eagle {
 namespace Core {
@@ -138,7 +146,16 @@ public:
     bool loadFromConfig(const QVariantMap& config);
     QVariantMap saveToConfig() const;
     
+    // 权限变更通知配置
+    void setNotificationEnabled(bool enabled);
+    bool isNotificationEnabled() const;
+    void setEventBus(EventBus* eventBus);
+    EventBus* eventBus() const;
+    void setOperatorId(const QString& operatorId);  // 设置当前操作者ID（用于通知）
+    QString operatorId() const;
+    
 signals:
+    // 基础变更信号（保持向后兼容）
     void permissionAdded(const QString& permissionName);
     void permissionRemoved(const QString& permissionName);
     void roleAdded(const QString& roleName);
@@ -147,6 +164,9 @@ signals:
     void userRemoved(const QString& userId);
     void permissionGranted(const QString& userId, const QString& permissionName);
     void permissionRevoked(const QString& userId, const QString& permissionName);
+    
+    // 权限变更通知信号（新增）
+    void permissionChanged(const PermissionChangeNotification& notification);
     
 private:
     Q_DISABLE_COPY(RBACManager)
@@ -161,6 +181,7 @@ private:
     void cachePermissionResult(const QString& userId, const QString& permissionName, bool result) const;
     void evictLRUEntries() const;
     void clearPermissionCache(const QString& permissionName) const;
+    void notifyPermissionChange(const PermissionChangeNotification& notification) const;
     
     friend class Private;
 };

@@ -35,6 +35,7 @@ set(SECURITY_SOURCES
     security/ApiKeyManager.cpp
     security/SessionManager.cpp
     security/RateLimiter.cpp
+    security/PermissionChangeNotification.cpp
 )
 
 # 监控模块

@@ -8,6 +8,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QList>
 #include "eagle/core/RBAC.h"
+#include "eagle/core/EventBus.h"
 
 namespace Eagle {
 namespace Core {
@@ -52,6 +53,11 @@ public:
     int cacheMaxSize = 1000;                               // 最大缓存条目数
     int cacheTTLSeconds = 300;                            // 缓存TTL（秒），默认5分钟
     mutable QMutex cacheMutex;                             // 缓存专用互斥锁
+    
+    // 权限变更通知
+    bool notificationEnabled = true;                       // 是否启用通知
+    EventBus* eventBus = nullptr;                          // 事件总线
+    QString currentOperatorId;                             // 当前操作者ID
 };
 
 } // namespace Core

@@ -25,6 +25,7 @@
 #include "eagle/core/AsyncServiceCall.h"
 #include "eagle/core/SslConfig.h"
 #include "eagle/core/SystemHealth.h"
+#include "eagle/core/PermissionChangeNotification.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
