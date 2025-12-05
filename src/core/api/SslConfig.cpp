@@ -6,6 +6,7 @@
 #include <QtNetwork/QSslSocket>
 #include <QtNetwork/QSslCertificate>
 #include <QtNetwork/QSslKey>
+#include <QtNetwork/QSslCipher>
 
 namespace Eagle {
 namespace Core {
@@ -283,7 +284,7 @@ void SslManager::updateSslConfiguration()
     
     // 设置协议版本
     QSsl::SslProtocol minProtocol = qtProtocolFromTlsProtocol(d->config.minProtocol);
-    QSsl::SslProtocol maxProtocol = qtProtocolFromTlsProtocol(d->config.maxProtocol);
+    Q_UNUSED(minProtocol);  // 暂时未使用，保留用于未来扩展
     
     // Qt的QSslConfiguration不直接支持min/max协议，需要在连接时设置
     // 这里先设置默认协议
@@ -295,7 +296,8 @@ void SslManager::updateSslConfiguration()
     if (!d->config.cipherSuites.isEmpty()) {
         QList<QSslCipher> ciphers;
         for (const QString& cipherName : d->config.cipherSuites) {
-            QSslCipher cipher(cipherName);
+            // 使用静态方法创建QSslCipher
+            QSslCipher cipher = QSslCipher::fromName(cipherName);
             if (!cipher.isNull()) {
                 ciphers.append(cipher);
             }

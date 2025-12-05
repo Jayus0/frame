@@ -4,7 +4,6 @@
 #include "eagle/core/ApiServer.h"
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
-#include <QtNetwork/QSslServer>
 #include <QtNetwork/QSslSocket>
 #include <QtCore/QMutex>
 #include <QtCore/QMap>
@@ -29,7 +28,6 @@ public:
     ApiServerPrivate(ApiServer* qq)
         : q(qq)
         , tcpServer(nullptr)
-        , sslServer(nullptr)
         , serverPort(8080)
         , isServerRunning(false)
         , isHttpsEnabled(false)
@@ -43,18 +41,13 @@ public:
             tcpServer->close();
             delete tcpServer;
         }
-        if (sslServer) {
-            sslServer->close();
-            delete sslServer;
-        }
         if (sslManager) {
             delete sslManager;
         }
     }
     
     ApiServer* q;
-    QTcpServer* tcpServer;
-    QSslServer* sslServer;  // HTTPS服务器
+    QTcpServer* tcpServer;  // 同时用于HTTP和HTTPS（HTTPS模式下使用QSslSocket）
     quint16 serverPort;
     bool isServerRunning;
     bool isHttpsEnabled;

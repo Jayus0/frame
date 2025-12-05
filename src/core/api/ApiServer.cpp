@@ -8,7 +8,6 @@
 #include <QtCore/QJsonParseError>
 #include <QtCore/QDateTime>
 #include <QtNetwork/QHostAddress>
-#include <QtNetwork/QSslServer>
 #include <QtNetwork/QSslSocket>
 #include <QtNetwork/QSslError>
 
@@ -270,26 +269,15 @@ bool ApiServer::startHttps(quint16 port, const SslConfig& sslConfig)
     d->serverPort = port;
     d->isHttpsEnabled = true;
     
-    // 创建SSL服务器
-    if (!d->sslServer) {
-        d->sslServer = new QSslServer(this);
-        connect(d->sslServer, &QSslServer::newConnection, this, &ApiServer::onNewConnection);
-        connect(d->sslServer, &QSslServer::sslErrors, this, [this](const QList<QSslError>& errors) {
-            QStringList errorMessages;
-            for (const QSslError& error : errors) {
-                errorMessages.append(error.errorString());
-            }
-            Logger::warning("ApiServer", QString("SSL错误: %1").arg(errorMessages.join(", ")));
-        });
+    // 使用QTcpServer，在连接时创建QSslSocket
+    if (!d->tcpServer) {
+        d->tcpServer = new QTcpServer(this);
+        connect(d->tcpServer, &QTcpServer::newConnection, this, &ApiServer::onNewConnection);
     }
     
-    // 配置SSL服务器
-    QSslConfiguration sslConfig_qt = d->sslManager->getSslConfiguration();
-    d->sslServer->setSslConfiguration(sslConfig_qt);
-    
-    if (!d->sslServer->listen(QHostAddress::Any, port)) {
+    if (!d->tcpServer->listen(QHostAddress::Any, port)) {
         QString error = QString("无法启动HTTPS服务器，端口: %1, 错误: %2")
-                       .arg(port).arg(d->sslServer->errorString());
+                       .arg(port).arg(d->tcpServer->errorString());
         Logger::error("ApiServer", error);
         emit this->error(error);
         return false;
@@ -306,9 +294,9 @@ void ApiServer::stop() {
         return;
     }
     
-    if (d->isHttpsEnabled && d->sslServer) {
-        d->sslServer->close();
-    } else if (d->tcpServer) {
+    bool wasHttps = d->isHttpsEnabled;
+    
+    if (d->tcpServer) {
         d->tcpServer->close();
     }
     
@@ -322,7 +310,7 @@ void ApiServer::stop() {
     d->isServerRunning = false;
     d->isHttpsEnabled = false;
     
-    Logger::info("ApiServer", d->isHttpsEnabled ? "HTTPS服务器已停止" : "HTTP服务器已停止");
+    Logger::info("ApiServer", wasHttps ? "HTTPS服务器已停止" : "HTTP服务器已停止");
     emit serverStopped();
 }
 
@@ -413,13 +401,24 @@ Framework* ApiServer::framework() const {
 }
 
 void ApiServer::onNewConnection() {
-    QAbstractSocket* client = nullptr;
-    
-    if (d->isHttpsEnabled && d->sslServer) {
-        while (d->sslServer->hasPendingConnections()) {
-            client = d->sslServer->nextPendingConnection();
-            QSslSocket* sslSocket = qobject_cast<QSslSocket*>(client);
-            if (sslSocket) {
+    while (d->tcpServer->hasPendingConnections()) {
+        QAbstractSocket* client = nullptr;
+        
+        if (d->isHttpsEnabled) {
+            // HTTPS模式：创建QSslSocket并配置SSL
+            QTcpSocket* tcpSocket = d->tcpServer->nextPendingConnection();
+            QSslSocket* sslSocket = new QSslSocket(this);
+            
+            // 设置SSL配置
+            QSslConfiguration sslConfig = d->sslManager->getSslConfiguration();
+            sslSocket->setSslConfiguration(sslConfig);
+            
+            // 将TCP socket的socket descriptor转移到SSL socket
+            if (sslSocket->setSocketDescriptor(tcpSocket->socketDescriptor())) {
+                tcpSocket->setSocketDescriptor(-1);  // 释放原socket
+                tcpSocket->deleteLater();
+                client = sslSocket;
+                
                 // 启动SSL握手
                 sslSocket->startServerEncryption();
                 connect(sslSocket, &QSslSocket::encrypted, this, [this, sslSocket]() {
@@ -437,17 +436,17 @@ void ApiServer::onNewConnection() {
                         sslSocket->ignoreSslErrors();
                     }
                 });
+            } else {
+                Logger::error("ApiServer", "无法创建SSL socket");
+                tcpSocket->deleteLater();
+                continue;
             }
-            
-            connect(client, &QAbstractSocket::readyRead, this, &ApiServer::onClientReadyRead);
-            connect(client, &QAbstractSocket::disconnected, this, &ApiServer::onClientDisconnected);
-            
-            QMutexLocker locker(&d->clientsMutex);
-            d->clientBuffers[client] = QByteArray();
-        }
-    } else if (d->tcpServer) {
-        while (d->tcpServer->hasPendingConnections()) {
+        } else {
+            // HTTP模式：直接使用TCP socket
             client = d->tcpServer->nextPendingConnection();
+        }
+        
+        if (client) {
             connect(client, &QAbstractSocket::readyRead, this, &ApiServer::onClientReadyRead);
             connect(client, &QAbstractSocket::disconnected, this, &ApiServer::onClientDisconnected);
             
