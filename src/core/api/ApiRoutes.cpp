@@ -503,6 +503,152 @@ void registerApiRoutes(ApiServer* server) {
         }
     });
     
+    // POST /api/v1/config/load - 从文件加载配置（支持多种格式）
+    server->post("/api/v1/config/load", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.write")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.write");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString filePath = body.value("filePath").toString();
+        QString formatStr = body.value("format").toString("auto").toLower();
+        
+        if (filePath.isEmpty()) {
+            resp.setError(400, "Bad Request", "filePath is required");
+            return;
+        }
+        
+        ConfigFormat format = ConfigFormat::JSON;
+        if (formatStr == "yaml" || formatStr == "yml") {
+            format = ConfigFormat::YAML;
+        } else if (formatStr == "ini" || formatStr == "conf" || formatStr == "cfg") {
+            format = ConfigFormat::INI;
+        } else if (formatStr != "auto" && formatStr != "json") {
+            resp.setError(400, "Bad Request", QString("Unsupported format: %1").arg(formatStr));
+            return;
+        }
+        
+        bool success = configManager->loadFromFile(filePath, ConfigManager::Global, format);
+        
+        if (success) {
+            QJsonObject result;
+            result["message"] = QString("配置加载成功: %1").arg(filePath);
+            QString detectedFormat = formatStr == "auto" ? 
+                (ConfigFormatParser::formatFromExtension(filePath) == ConfigFormat::JSON ? "json" :
+                 ConfigFormatParser::formatFromExtension(filePath) == ConfigFormat::YAML ? "yaml" : "ini") : formatStr;
+            result["format"] = detectedFormat;
+            resp.setSuccess(result);
+        } else {
+            resp.setError(500, "Internal Server Error", QString("配置加载失败: %1").arg(filePath));
+        }
+    });
+    
+    // POST /api/v1/config/save - 保存配置到文件（支持多种格式）
+    server->post("/api/v1/config/save", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.write")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.write");
+            return;
+        }
+        
+        ConfigManager* configManager = framework->configManager();
+        if (!configManager) {
+            resp.setError(500, "ConfigManager not available");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString filePath = body.value("filePath").toString();
+        QString formatStr = body.value("format").toString("auto").toLower();
+        
+        if (filePath.isEmpty()) {
+            resp.setError(400, "Bad Request", "filePath is required");
+            return;
+        }
+        
+        ConfigFormat format = ConfigFormat::JSON;
+        if (formatStr == "yaml" || formatStr == "yml") {
+            format = ConfigFormat::YAML;
+        } else if (formatStr == "ini" || formatStr == "conf" || formatStr == "cfg") {
+            format = ConfigFormat::INI;
+        } else if (formatStr != "auto" && formatStr != "json") {
+            resp.setError(400, "Bad Request", QString("Unsupported format: %1").arg(formatStr));
+            return;
+        }
+        
+        bool success = configManager->saveToFile(filePath, ConfigManager::Global, format);
+        
+        if (success) {
+            QJsonObject result;
+            result["message"] = QString("配置保存成功: %1").arg(filePath);
+            QString detectedFormat = formatStr == "auto" ? 
+                (ConfigFormatParser::formatFromExtension(filePath) == ConfigFormat::JSON ? "json" :
+                 ConfigFormatParser::formatFromExtension(filePath) == ConfigFormat::YAML ? "yaml" : "ini") : formatStr;
+            result["format"] = detectedFormat;
+            resp.setSuccess(result);
+        } else {
+            resp.setError(500, "Internal Server Error", QString("配置保存失败: %1").arg(filePath));
+        }
+    });
+    
+    // POST /api/v1/config/convert - 格式转换
+    server->post("/api/v1/config/convert", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "config.read")) {
+            resp.setError(403, "Forbidden", "缺少权限: config.read");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString content = body.value("content").toString();
+        QString sourceFormatStr = body.value("sourceFormat").toString("json").toLower();
+        QString targetFormatStr = body.value("targetFormat").toString("json").toLower();
+        
+        if (content.isEmpty()) {
+            resp.setError(400, "Bad Request", "content is required");
+            return;
+        }
+        
+        ConfigFormat sourceFormat = ConfigFormat::JSON;
+        if (sourceFormatStr == "yaml" || sourceFormatStr == "yml") {
+            sourceFormat = ConfigFormat::YAML;
+        } else if (sourceFormatStr == "ini" || sourceFormatStr == "conf" || sourceFormatStr == "cfg") {
+            sourceFormat = ConfigFormat::INI;
+        }
+        
+        ConfigFormat targetFormat = ConfigFormat::JSON;
+        if (targetFormatStr == "yaml" || targetFormatStr == "yml") {
+            targetFormat = ConfigFormat::YAML;
+        } else if (targetFormatStr == "ini" || targetFormatStr == "conf" || targetFormatStr == "cfg") {
+            targetFormat = ConfigFormat::INI;
+        }
+        
+        QByteArray converted = ConfigFormatParser::convertFormat(content.toUtf8(), sourceFormat, targetFormat);
+        
+        QJsonObject result;
+        result["content"] = QString::fromUtf8(converted);
+        result["sourceFormat"] = sourceFormatStr;
+        result["targetFormat"] = targetFormatStr;
+        resp.setSuccess(result);
+    });
+    
     // ============================================================================
     // 备份管理API
     // ============================================================================
