@@ -13,6 +13,7 @@
 #include <QtCore/QJsonDocument>
 #include <iostream>
 #include "eagle/core/Framework.h"
+#include "eagle/core/PluginManager.h"
 #include "eagle/core/BackupManager.h"
 #include "eagle/core/TestRunner.h"
 #include "eagle/core/TestCaseBase.h"
@@ -104,6 +105,9 @@ public:
         QCommandLineOption healthOption("health", "System health check");
         parser.addOption(healthOption);
         
+        QCommandLineOption pluginsOption("plugins", "Plugin management");
+        parser.addOption(pluginsOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -151,6 +155,8 @@ public:
             return handleSsl(args.mid(1));
         } else if (parser.isSet(healthOption) || command == "health") {
             return handleHealth(args.mid(1));
+        } else if (parser.isSet(pluginsOption) || command == "plugins") {
+            return handlePlugins(args.mid(1));
         } else if (command == "audit") {
             return handleAudit(args.mid(1));
         } else if (command.isEmpty()) {
@@ -2092,6 +2098,76 @@ private:
         }
     }
 };
+
+int handlePlugins(const QStringList& args) {
+    if (args.isEmpty() || args.first() != "list") {
+        std::cerr << "Usage: eagle-cli plugins list [--category=<category>]" << std::endl;
+        std::cerr << "Categories: ui, service, tool" << std::endl;
+        return 1;
+    }
+    
+    // 初始化框架
+    Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+    if (!framework->initialize()) {
+        std::cerr << "Error: Failed to initialize framework" << std::endl;
+        return 1;
+    }
+    
+    Eagle::Core::PluginManager* pluginManager = framework->pluginManager();
+    if (!pluginManager) {
+        std::cerr << "Error: PluginManager not available" << std::endl;
+        return 1;
+    }
+    
+    // 解析分类参数
+    QString categoryFilter;
+    for (int i = 1; i < args.size(); ++i) {
+        if (args[i].startsWith("--category=")) {
+            categoryFilter = args[i].mid(11);
+        } else if (args[i] == "--category" && i + 1 < args.size()) {
+            categoryFilter = args[++i];
+        }
+    }
+    
+    QStringList pluginIds;
+    if (!categoryFilter.isEmpty()) {
+        // 按分类筛选
+        Eagle::Core::PluginCategory category = Eagle::Core::PluginMetadata::categoryFromString(categoryFilter);
+        pluginIds = pluginManager->pluginsByCategory(category);
+    } else {
+        // 获取所有插件
+        pluginIds = pluginManager->availablePlugins();
+    }
+    
+    // 显示插件列表
+    std::cout << "=== Plugin List ===" << std::endl;
+    if (!categoryFilter.isEmpty()) {
+        std::cout << "Category: " << categoryFilter.toStdString() << std::endl;
+    }
+    std::cout << "Total: " << pluginIds.size() << std::endl;
+    std::cout << std::endl;
+    
+    for (const QString& pluginId : pluginIds) {
+        Eagle::Core::PluginMetadata metadata = pluginManager->getPluginMetadata(pluginId);
+        std::cout << "ID: " << pluginId.toStdString() << std::endl;
+        std::cout << "  Name: " << metadata.name.toStdString() << std::endl;
+        std::cout << "  Version: " << metadata.version.toStdString() << std::endl;
+        std::cout << "  Category: " << Eagle::Core::PluginMetadata::categoryToString(metadata.category).toStdString() << std::endl;
+        std::cout << "  Author: " << metadata.author.toStdString() << std::endl;
+        std::cout << "  Description: " << metadata.description.toStdString() << std::endl;
+        std::cout << "  Loaded: " << (pluginManager->isPluginLoaded(pluginId) ? "Yes" : "No") << std::endl;
+        std::cout << std::endl;
+    }
+    
+    // 显示分类统计
+    QMap<Eagle::Core::PluginCategory, int> stats = pluginManager->categoryStatistics();
+    std::cout << "=== Category Statistics ===" << std::endl;
+    std::cout << "UI: " << stats[Eagle::Core::PluginCategory::UI] << std::endl;
+    std::cout << "Service: " << stats[Eagle::Core::PluginCategory::Service] << std::endl;
+    std::cout << "Tool: " << stats[Eagle::Core::PluginCategory::Tool] << std::endl;
+    
+    return 0;
+}
 
 int handleAudit(const QStringList& args) {
     if (args.isEmpty()) {

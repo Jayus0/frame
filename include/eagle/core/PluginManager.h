@@ -44,6 +44,11 @@ public:
     bool isPluginLoaded(const QString& pluginId) const;
     PluginMetadata getPluginMetadata(const QString& pluginId) const;
     
+    // 分类管理
+    QStringList pluginsByCategory(PluginCategory category) const;
+    QMap<PluginCategory, QStringList> categories() const;
+    QMap<PluginCategory, int> categoryStatistics() const;
+    
     // 依赖管理
     QStringList resolveDependencies(const QString& pluginId) const;
     bool checkDependencies(const QString& pluginId, QStringList& missing) const;

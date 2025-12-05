@@ -468,6 +468,50 @@ PluginMetadata PluginManager::getPluginMetadata(const QString& pluginId) const
     return d->metadata.value(pluginId);
 }
 
+QStringList PluginManager::pluginsByCategory(PluginCategory category) const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    QStringList result;
+    for (auto it = d->metadata.constBegin(); it != d->metadata.constEnd(); ++it) {
+        if (it.value().category == category) {
+            result.append(it.key());
+        }
+    }
+    return result;
+}
+
+QMap<PluginCategory, QStringList> PluginManager::categories() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    QMap<PluginCategory, QStringList> result;
+    for (auto it = d->metadata.constBegin(); it != d->metadata.constEnd(); ++it) {
+        PluginCategory cat = it.value().category;
+        result[cat].append(it.key());
+    }
+    return result;
+}
+
+QMap<PluginCategory, int> PluginManager::categoryStatistics() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    QMap<PluginCategory, int> result;
+    result[PluginCategory::UI] = 0;
+    result[PluginCategory::Service] = 0;
+    result[PluginCategory::Tool] = 0;
+    
+    for (auto it = d->metadata.constBegin(); it != d->metadata.constEnd(); ++it) {
+        PluginCategory cat = it.value().category;
+        result[cat]++;
+    }
+    return result;
+}
+
 QStringList PluginManager::resolveDependencies(const QString& pluginId) const
 {
     const auto* d = d_func();

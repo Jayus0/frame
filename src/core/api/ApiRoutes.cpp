@@ -183,7 +183,19 @@ void registerApiRoutes(ApiServer* server) {
             return;
         }
         
-        QStringList pluginIds = pluginManager->availablePlugins();
+        // 支持分类筛选参数
+        QString categoryParam = req.queryParams.value("category");
+        QStringList pluginIds;
+        
+        if (!categoryParam.isEmpty()) {
+            // 按分类筛选
+            PluginCategory category = PluginMetadata::categoryFromString(categoryParam);
+            pluginIds = pluginManager->pluginsByCategory(category);
+        } else {
+            // 获取所有插件
+            pluginIds = pluginManager->availablePlugins();
+        }
+        
         QJsonArray plugins;
         
         for (const QString& pluginId : pluginIds) {
@@ -195,6 +207,7 @@ void registerApiRoutes(ApiServer* server) {
             plugin["version"] = metadata.version;
             plugin["author"] = metadata.author;
             plugin["description"] = metadata.description;
+            plugin["category"] = PluginMetadata::categoryToString(metadata.category);
             plugin["loaded"] = pluginManager->isPluginLoaded(pluginId);
             
             plugins.append(plugin);
@@ -203,6 +216,15 @@ void registerApiRoutes(ApiServer* server) {
         QJsonObject data;
         data["plugins"] = plugins;
         data["total"] = plugins.size();
+        
+        // 添加分类统计信息
+        QMap<PluginCategory, int> stats = pluginManager->categoryStatistics();
+        QJsonObject categoryStats;
+        categoryStats["ui"] = stats[PluginCategory::UI];
+        categoryStats["service"] = stats[PluginCategory::Service];
+        categoryStats["tool"] = stats[PluginCategory::Tool];
+        data["categoryStatistics"] = categoryStats;
+        
         resp.setSuccess(data);
         
         // 审计日志
@@ -238,6 +260,7 @@ void registerApiRoutes(ApiServer* server) {
         plugin["version"] = metadata.version;
         plugin["author"] = metadata.author;
         plugin["description"] = metadata.description;
+        plugin["category"] = PluginMetadata::categoryToString(metadata.category);
         plugin["loaded"] = pluginManager->isPluginLoaded(pluginId);
         
         // 依赖信息

@@ -17,6 +17,13 @@ QT_END_NAMESPACE
 namespace Eagle {
 namespace Core {
 
+// 插件分类枚举
+enum class PluginCategory {
+    UI,      // UI插件
+    Service, // 服务插件
+    Tool     // 工具插件
+};
+
 // 插件元数据
 struct PluginMetadata {
     QString pluginId;
@@ -27,9 +34,28 @@ struct PluginMetadata {
     QStringList dependencies;
     QStringList permissions;
     QString configSchema;
+    PluginCategory category = PluginCategory::Tool;  // 默认分类为工具插件
     
     bool isValid() const {
         return !pluginId.isEmpty() && !name.isEmpty() && !version.isEmpty();
+    }
+    
+    // 分类字符串转换
+    static QString categoryToString(PluginCategory category) {
+        switch (category) {
+            case PluginCategory::UI: return "ui";
+            case PluginCategory::Service: return "service";
+            case PluginCategory::Tool: return "tool";
+            default: return "tool";
+        }
+    }
+    
+    static PluginCategory categoryFromString(const QString& str) {
+        QString lower = str.toLower();
+        if (lower == "ui") return PluginCategory::UI;
+        if (lower == "service") return PluginCategory::Service;
+        if (lower == "tool") return PluginCategory::Tool;
+        return PluginCategory::Tool;  // 默认值
     }
 };
 
