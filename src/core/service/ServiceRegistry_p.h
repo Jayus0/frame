@@ -8,6 +8,7 @@
 #include "eagle/core/ServiceDescriptor.h"
 #include "eagle/core/RetryPolicy.h"
 #include "eagle/core/DegradationPolicy.h"
+#include "eagle/core/AsyncServiceCall.h"
 
 namespace Eagle {
 namespace Core {
@@ -21,6 +22,7 @@ public:
     QMap<QString, RetryPolicyConfig> retryPolicies;    // serviceName -> retryPolicy
     QMap<QString, DegradationPolicyConfig> degradationPolicies;  // serviceName -> degradationPolicy
     LoadBalancer* loadBalancer = nullptr;  // 负载均衡器
+    AsyncServiceCall* asyncServiceCall = nullptr;  // 异步服务调用器
     int defaultTimeoutMs = 5000;  // 默认超时时间
     bool enableCircuitBreaker = true;  // 是否启用熔断器
     bool enablePermissionCheck = false;  // 是否启用权限检查

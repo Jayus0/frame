@@ -5,6 +5,7 @@
 #include "eagle/core/RetryPolicy.h"
 #include "eagle/core/DegradationPolicy.h"
 #include "eagle/core/LoadBalancer.h"
+#include "eagle/core/AsyncServiceCall.h"
 #include "eagle/core/Framework.h"
 #include "eagle/core/RBAC.h"
 #include "eagle/core/RateLimiter.h"
@@ -29,6 +30,7 @@ ServiceRegistry::ServiceRegistry(QObject* parent)
     d->defaultTimeoutMs = 5000;
     d->enableCircuitBreaker = true;
     d->loadBalancer = new LoadBalancer(this);
+    d->asyncServiceCall = new AsyncServiceCall(this, this);
 }
 
 ServiceRegistry::~ServiceRegistry()
@@ -607,6 +609,13 @@ LoadBalancer* ServiceRegistry::loadBalancer() const
     const auto* d = d_func();
     QMutexLocker locker(&d->mutex);
     return d->loadBalancer;
+}
+
+AsyncServiceCall* ServiceRegistry::asyncServiceCall() const
+{
+    const auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    return d->asyncServiceCall;
 }
 
 

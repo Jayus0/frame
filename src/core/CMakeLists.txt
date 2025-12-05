@@ -14,6 +14,7 @@ set(SERVICE_SOURCES
     service/DegradationPolicy.cpp
     service/FailoverManager.cpp
     service/LoadBalancer.cpp
+    service/AsyncServiceCall.cpp
 )
 
 # 配置模块

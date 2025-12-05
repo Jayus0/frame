@@ -21,6 +21,7 @@
 #include "eagle/core/ConfigVersion.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
+#include "eagle/core/AsyncServiceCall.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -2320,6 +2321,114 @@ void registerApiRoutes(ApiServer* server) {
         result["version2"] = version2;
         result["diffs"] = diffsArray;
         result["diffCount"] = diffs.size();
+        
+        resp.setSuccess(result);
+    });
+    
+    // POST /api/v1/services/{name}/async - 异步调用服务
+    server->post("/api/v1/services/{name}/async", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "service.call")) {
+            resp.setError(403, "Forbidden", "缺少权限: service.call");
+            return;
+        }
+        
+        ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            resp.setError(500, "ServiceRegistry not available");
+            return;
+        }
+        
+        AsyncServiceCall* asyncCall = serviceRegistry->asyncServiceCall();
+        if (!asyncCall) {
+            resp.setError(500, "AsyncServiceCall not available");
+            return;
+        }
+        
+        QString serviceName = req.pathParams.value("name");
+        if (serviceName.isEmpty()) {
+            resp.setError(400, "Bad Request", "Service name is required");
+            return;
+        }
+        
+        QJsonObject body = req.jsonBody();
+        QString method = body.value("method").toString();
+        QVariantList args;
+        if (body.contains("args") && body["args"].isArray()) {
+            QJsonArray argsArray = body["args"].toArray();
+            for (const QJsonValue& value : argsArray) {
+                args.append(value.toVariant());
+            }
+        }
+        int timeout = body.value("timeout").toInt(5000);
+        
+        if (method.isEmpty()) {
+            resp.setError(400, "Bad Request", "Method name is required");
+            return;
+        }
+        
+        // 启动异步调用
+        ServiceFuture* future = asyncCall->callAsync(serviceName, method, args, timeout);
+        
+        // 立即返回，不等待结果
+        QJsonObject result;
+        result["async"] = true;
+        result["serviceName"] = serviceName;
+        result["method"] = method;
+        result["message"] = "异步调用已启动，使用futureId查询结果";
+        
+        // 生成futureId（简化实现，使用Future指针地址的哈希）
+        QString futureId = QString::number(reinterpret_cast<quintptr>(future), 16);
+        result["futureId"] = futureId;
+        
+        // 存储Future（简化实现，实际应该使用更持久化的存储）
+        // 这里暂时不存储，客户端需要轮询或使用WebSocket获取结果
+        
+        resp.setSuccess(result);
+    });
+    
+    // GET /api/v1/services/async/{futureId} - 查询异步调用结果
+    server->get("/api/v1/services/async/{futureId}", [framework](const HttpRequest& req, HttpResponse& resp) {
+        QString userId = getUserIdFromRequest(framework, req);
+        
+        // 权限检查
+        RBACManager* rbac = framework->rbacManager();
+        if (rbac && !rbac->checkPermission(userId, "service.call")) {
+            resp.setError(403, "Forbidden", "缺少权限: service.call");
+            return;
+        }
+        
+        QString futureIdStr = req.pathParams.value("futureId");
+        bool ok;
+        quintptr futurePtr = futureIdStr.toULongLong(&ok, 16);
+        
+        if (!ok) {
+            resp.setError(400, "Bad Request", "Invalid future ID");
+            return;
+        }
+        
+        ServiceFuture* future = reinterpret_cast<ServiceFuture*>(futurePtr);
+        if (!future) {
+            resp.setError(404, "Not Found", "Future not found");
+            return;
+        }
+        
+        QJsonObject result;
+        result["futureId"] = futureIdStr;
+        result["finished"] = future->isFinished();
+        
+        if (future->isFinished()) {
+            result["success"] = future->isSuccess();
+            if (future->isSuccess()) {
+                result["result"] = QJsonValue::fromVariant(future->result());
+            } else {
+                result["error"] = future->error();
+            }
+            result["elapsedMs"] = future->elapsedMs();
+        }
         
         resp.setSuccess(result);
     });

@@ -25,6 +25,7 @@
 #include "eagle/core/ConfigVersion.h"
 #include "eagle/core/PluginSignature.h"
 #include "eagle/core/LoadBalancer.h"
+#include "eagle/core/AsyncServiceCall.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -91,6 +92,9 @@ public:
         QCommandLineOption configVersionOption("config-version", "Config version management");
         parser.addOption(configVersionOption);
         
+        QCommandLineOption asyncOption("async", "Async service call");
+        parser.addOption(asyncOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -128,6 +132,8 @@ public:
             return handleLoadBalance(args.mid(1));
         } else if (parser.isSet(configVersionOption) || command == "config-version" || command == "config") {
             return handleConfigVersion(args.mid(1));
+        } else if (parser.isSet(asyncOption) || command == "async") {
+            return handleAsync(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;
@@ -1797,6 +1803,118 @@ private:
         } else {
             std::cerr << "Unknown config-version command: " << subCommand.toStdString() << std::endl;
             std::cerr << "Use 'eagle-cli config-version list|show|create|rollback|compare'" << std::endl;
+            return 1;
+        }
+    }
+    
+    int handleAsync(const QStringList& args) {
+        if (args.isEmpty()) {
+            std::cerr << "Usage: eagle-cli async <call|wait|batch> [options]" << std::endl;
+            return 1;
+        }
+        
+        QString subCommand = args.first();
+        
+        // 初始化框架
+        Eagle::Core::Framework* framework = Eagle::Core::Framework::instance();
+        if (!framework->initialize()) {
+            std::cerr << "Error: Failed to initialize framework" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::ServiceRegistry* serviceRegistry = framework->serviceRegistry();
+        if (!serviceRegistry) {
+            std::cerr << "Error: ServiceRegistry not available" << std::endl;
+            return 1;
+        }
+        
+        Eagle::Core::AsyncServiceCall* asyncCall = serviceRegistry->asyncServiceCall();
+        if (!asyncCall) {
+            std::cerr << "Error: AsyncServiceCall not available" << std::endl;
+            return 1;
+        }
+        
+        if (subCommand == "call") {
+            if (args.size() < 3) {
+                std::cerr << "Usage: eagle-cli async call <service-name> <method> [args...] [--timeout <ms>]" << std::endl;
+                return 1;
+            }
+            
+            QString serviceName = args[1];
+            QString method = args[2];
+            QVariantList callArgs;
+            int timeout = 5000;
+            
+            for (int i = 3; i < args.size(); ++i) {
+                if (args[i] == "--timeout" && i + 1 < args.size()) {
+                    timeout = args[++i].toInt();
+                } else {
+                    callArgs.append(args[i]);
+                }
+            }
+            
+            std::cout << "Calling service asynchronously: " << serviceName.toStdString() 
+                      << "::" << method.toStdString() << std::endl;
+            
+            Eagle::Core::ServiceFuture* future = asyncCall->callAsync(serviceName, method, callArgs, timeout);
+            
+            // 等待结果
+            Eagle::Core::ServiceCallResult result = future->wait();
+            
+            if (result.success) {
+                std::cout << "Result: " << result.result.toString().toStdString() << std::endl;
+                std::cout << "Elapsed: " << result.elapsedMs << "ms" << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: " << result.error.toStdString() << std::endl;
+                std::cerr << "Elapsed: " << result.elapsedMs << "ms" << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "wait") {
+            if (args.size() < 2) {
+                std::cerr << "Usage: eagle-cli async wait <future-id> [--timeout <ms>]" << std::endl;
+                return 1;
+            }
+            
+            QString futureIdStr = args[1];
+            bool ok;
+            quintptr futurePtr = futureIdStr.toULongLong(&ok, 16);
+            
+            if (!ok) {
+                std::cerr << "Error: Invalid future ID" << std::endl;
+                return 1;
+            }
+            
+            int timeout = -1;
+            for (int i = 2; i < args.size(); ++i) {
+                if (args[i] == "--timeout" && i + 1 < args.size()) {
+                    timeout = args[++i].toInt();
+                }
+            }
+            
+            Eagle::Core::ServiceFuture* future = reinterpret_cast<Eagle::Core::ServiceFuture*>(futurePtr);
+            if (!future) {
+                std::cerr << "Error: Future not found" << std::endl;
+                return 1;
+            }
+            
+            Eagle::Core::ServiceCallResult result = future->wait(timeout);
+            
+            if (result.success) {
+                std::cout << "Result: " << result.result.toString().toStdString() << std::endl;
+                std::cout << "Elapsed: " << result.elapsedMs << "ms" << std::endl;
+                return 0;
+            } else {
+                std::cerr << "Error: " << result.error.toStdString() << std::endl;
+                std::cerr << "Elapsed: " << result.elapsedMs << "ms" << std::endl;
+                return 1;
+            }
+        } else if (subCommand == "batch") {
+            std::cerr << "Batch async calls not yet implemented in CLI" << std::endl;
+            return 1;
+        } else {
+            std::cerr << "Unknown async command: " << subCommand.toStdString() << std::endl;
+            std::cerr << "Use 'eagle-cli async call|wait|batch'" << std::endl;
             return 1;
         }
     }

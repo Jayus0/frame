@@ -20,7 +20,8 @@ SERVICE_SOURCES += \
     ../src/core/service/RetryPolicy.cpp \
     ../src/core/service/DegradationPolicy.cpp \
     ../src/core/service/FailoverManager.cpp \
-    ../src/core/service/LoadBalancer.cpp
+    ../src/core/service/LoadBalancer.cpp \
+    ../src/core/service/AsyncServiceCall.cpp
 
 # 配置模块
 CONFIG_SOURCES += \
@@ -129,6 +130,7 @@ HEADERS += \
     ../src/core/service/FailoverManager_p.h \
     ../include/eagle/core/LoadBalancer.h \
     ../src/core/service/LoadBalancer_p.h \
+    ../include/eagle/core/AsyncServiceCall.h \
     ../include/eagle/core/ConfigVersion.h \
     ../src/core/config/ConfigVersion_p.h \
     ../include/eagle/core/NotificationChannel.h \

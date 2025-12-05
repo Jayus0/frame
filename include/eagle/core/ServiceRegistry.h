@@ -12,6 +12,7 @@
 #include "RetryPolicy.h"
 #include "DegradationPolicy.h"
 #include "LoadBalancer.h"
+#include "AsyncServiceCall.h"
 
 namespace Eagle {
 namespace Core {
@@ -48,6 +49,9 @@ public:
     // 带用户ID的服务调用（支持权限检查和限流）
     QVariant callService(const QString& userId, const QString& serviceName, 
                         const QString& method, const QVariantList& args = QVariantList());
+    
+    // 异步服务调用
+    AsyncServiceCall* asyncServiceCall() const;
     
     // 配置
     void setDefaultTimeout(int timeoutMs);
