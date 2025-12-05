@@ -24,6 +24,7 @@
 #include "eagle/core/LoadBalancer.h"
 #include "eagle/core/AsyncServiceCall.h"
 #include "eagle/core/SslConfig.h"
+#include "eagle/core/SystemHealth.h"
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -345,35 +346,17 @@ void registerApiRoutes(ApiServer* server) {
     // 系统管理API
     // ============================================================================
     
-    // GET /api/v1/health - 健康检查
+    // GET /api/v1/health - 健康检查（详细报告）
     server->get("/api/v1/health", [framework](const HttpRequest& req, HttpResponse& resp) {
         Q_UNUSED(req);
-        QJsonObject health;
-        health["status"] = "healthy";
-        health["timestamp"] = QDateTime::currentDateTime().toString(Qt::ISODate);
         
-        // 系统资源信息
-        PerformanceMonitor* monitor = framework->performanceMonitor();
-        if (monitor) {
-            QJsonObject system;
-            system["cpuUsage"] = monitor->getCpuUsage();
-            system["memoryUsageMB"] = monitor->getMemoryUsageMB();
-            health["system"] = system;
+        if (!framework) {
+            resp.setError(500, "Framework not available");
+            return;
         }
         
-        // 插件状态
-        PluginManager* pluginManager = framework->pluginManager();
-        if (pluginManager) {
-            QJsonObject plugins;
-            plugins["total"] = pluginManager->availablePlugins().size();
-            plugins["loaded"] = 0;
-            for (const QString& id : pluginManager->availablePlugins()) {
-                if (pluginManager->isPluginLoaded(id)) {
-                    plugins["loaded"] = plugins["loaded"].toInt() + 1;
-                }
-            }
-            health["plugins"] = plugins;
-        }
+        // 获取系统健康报告
+        QJsonObject health = framework->systemHealth();
         
         resp.setSuccess(health);
     });

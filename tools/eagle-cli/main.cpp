@@ -28,6 +28,7 @@
 #include "eagle/core/LoadBalancer.h"
 #include "eagle/core/AsyncServiceCall.h"
 #include "eagle/core/SslConfig.h"
+#include "eagle/core/SystemHealth.h"
 
 /**
  * @brief Eagle Framework CLI工具
@@ -100,6 +101,9 @@ public:
         QCommandLineOption sslOption("ssl", "SSL/TLS management");
         parser.addOption(sslOption);
         
+        QCommandLineOption healthOption("health", "System health check");
+        parser.addOption(healthOption);
+        
         // 解析命令行参数
         parser.process(app);
         
@@ -145,6 +149,8 @@ public:
             return handleAsync(args.mid(1));
         } else if (parser.isSet(sslOption) || command == "ssl" || command == "tls") {
             return handleSsl(args.mid(1));
+        } else if (parser.isSet(healthOption) || command == "health") {
+            return handleHealth(args.mid(1));
         } else if (command.isEmpty()) {
             parser.showHelp(0);
             return 0;

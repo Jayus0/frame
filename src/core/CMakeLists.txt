@@ -45,6 +45,7 @@ set(MONITORING_SOURCES
     monitoring/EmailChannel.cpp
     monitoring/WebhookChannel.cpp
     monitoring/DiagnosticManager.cpp
+    monitoring/SystemHealth.cpp
 )
 
 # API模块

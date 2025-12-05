@@ -62,6 +62,9 @@ public:
     QString version() const;
     bool isInitialized() const;
     
+    // 系统健康检查
+    QJsonObject systemHealth() const;
+    
 signals:
     void initialized();
     void shutdownCompleted();  // 重命名信号，避免与函数名冲突

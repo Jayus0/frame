@@ -48,7 +48,8 @@ MONITORING_SOURCES += \
     ../src/core/monitoring/NotificationChannel.cpp \
     ../src/core/monitoring/EmailChannel.cpp \
     ../src/core/monitoring/WebhookChannel.cpp \
-    ../src/core/monitoring/DiagnosticManager.cpp
+    ../src/core/monitoring/DiagnosticManager.cpp \
+    ../src/core/monitoring/SystemHealth.cpp
 
 # API模块
 API_SOURCES += \
@@ -138,6 +139,7 @@ HEADERS += \
     ../include/eagle/core/ConfigFormat.h \
     ../include/eagle/core/SslConfig.h \
     ../src/core/api/SslConfig_p.h \
+    ../include/eagle/core/SystemHealth.h \
     ../include/eagle/core/NotificationChannel.h \
     ../include/eagle/core/EmailChannel.h \
     ../include/eagle/core/WebhookChannel.h \

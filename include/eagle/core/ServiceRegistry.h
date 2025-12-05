@@ -80,6 +80,9 @@ public:
     // 健康检查
     bool checkServiceHealth(const QString& serviceName) const;
     
+    // 获取所有服务的健康状态
+    QMap<QString, bool> getAllServicesHealth() const;
+    
     // 负载均衡配置
     void setLoadBalanceEnabled(bool enabled);
     bool isLoadBalanceEnabled() const;

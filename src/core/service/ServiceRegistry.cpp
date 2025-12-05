@@ -894,5 +894,67 @@ DegradationPolicyConfig ServiceRegistry::getDegradationPolicy(const QString& ser
     return d->degradationPolicies.value(serviceName);
 }
 
+bool ServiceRegistry::checkServiceHealth(const QString& serviceName) const
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    // 检查服务是否存在
+    if (!d->services.contains(serviceName)) {
+        return false;
+    }
+    
+    // 检查服务提供者是否存在
+    QObject* provider = d->providers.value(serviceName);
+    if (!provider) {
+        return false;
+    }
+    
+    // 检查熔断器状态（如果启用）
+    if (d->enableCircuitBreaker) {
+        CircuitBreaker* breaker = d->circuitBreakers.value(serviceName);
+        if (breaker && breaker->getState() == CircuitBreakerState::Open) {
+            return false;  // 熔断器打开，服务不健康
+        }
+    }
+    
+    // 检查负载均衡器中的实例健康状态（如果启用）
+    if (d->loadBalancer && d->enableLoadBalance) {
+        // 获取服务实例的健康状态
+        QStringList instances = d->loadBalancer->getInstances(serviceName);
+        if (!instances.isEmpty()) {
+            // 至少有一个健康实例
+            bool hasHealthyInstance = false;
+            for (const QString& instanceId : instances) {
+                LoadBalancer::InstanceStats stats = d->loadBalancer->getInstanceStats(serviceName, instanceId);
+                if (stats.isHealthy) {
+                    hasHealthyInstance = true;
+                    break;
+                }
+            }
+            return hasHealthyInstance;
+        }
+    }
+    
+    return true;  // 默认认为服务健康
+}
+
+QMap<QString, bool> ServiceRegistry::getAllServicesHealth() const
+{
+    auto* d = d_func();
+    QMutexLocker locker(&d->mutex);
+    
+    QMap<QString, bool> healthMap;
+    QStringList services = d->services.keys();
+    
+    locker.unlock();  // 释放锁，避免在checkServiceHealth中再次加锁
+    
+    for (const QString& serviceName : services) {
+        healthMap[serviceName] = checkServiceHealth(serviceName);
+    }
+    
+    return healthMap;
+}
+
 } // namespace Core
 } // namespace Eagle

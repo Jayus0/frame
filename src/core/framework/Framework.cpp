@@ -1,4 +1,5 @@
 #include "eagle/core/Framework.h"
+#include "eagle/core/SystemHealth.h"
 #include "Framework_p.h"
 #include "eagle/core/Logger.h"
 #include "eagle/core/ApiRoutes.h"
@@ -345,6 +346,12 @@ QString Framework::version() const
 bool Framework::isInitialized() const
 {
     return d->initialized;
+}
+
+QJsonObject Framework::systemHealth() const
+{
+    SystemHealthReport report = SystemHealthManager::getSystemHealth(const_cast<Framework*>(this));
+    return SystemHealthManager::toJson(report);
 }
 
 } // namespace Core
